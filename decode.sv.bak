@@ -1,0 +1,189 @@
+module decode #(
+    parameter INSTR_WIDTH = 32,
+    parameter N_INSTR_PER_CYCLE = 2
+) (
+    input [INSTR_WIDTH-1:0] instr_A,
+    input [INSTR_WIDTH-1:0] instr_B,
+
+    output logic [6:0]  opcode_A,
+    output logic [4:0]  rd_A,
+    output logic [2:0]  funct3_A,
+    output logic [4:0]  rs1_A,
+    output logic [4:0]  rs2_A,
+    output logic [6:0]  funct7_A,
+    output logic [31:0] imm_A,
+    
+    output logic [6:0]  opcode_B,
+    output logic [4:0]  rd_B,
+    output logic [3:0]  funct3_B,
+    output logic [4:0]  rs1_B,
+    output logic [4:0]  rs2_B,
+    output logic [6:0]  funct7_B,
+    output logic [31:0] imm_B
+);
+
+`include "constants.svh"
+
+logic [INSTR_WIDTH-1:0] instr [0:1];
+logic [6:0] opcode  [0:1];
+logic [4:0] rd      [0:1];
+logic [2:0] funct3  [0:1];
+logic [4:0] rs1     [0:1];
+logic [4:0] rs2     [0:1];
+logic [6:0] funct7  [0:1];
+logic [31:0] imm    [0:1];
+
+assign instr[0] = instr_A;
+assign opcode_A = opcode[0];
+assign rd_A = rd[0];
+assign funct3_A = funct3[0];
+assign rs1_A = rs1[0];
+assign rs2_A = rs2[0];
+assign funct7_A = funct7[0];
+assign imm_A = imm[0];
+
+assign instr[1] = instr_B;
+assign opcode_B = opcode[1];
+assign rd_B = rd[1];
+assign funct3_B = funct3[1];
+assign rs1_B = rs1[1];
+assign rs2_B = rs2[1];
+assign funct7_B = funct7[1];
+assign imm_B = imm[1];
+
+genvar i;
+generate 
+    for (i = 0; i < N_INSTR_PER_CYCLE; i = i + 1) begin
+        decode_single #(.INSTR_WIDTH(INSTR_WIDTH)) d0 (
+            .instr (instr[i]),
+            .opcode (opcode[i]),
+            .rd (rd[i]),
+            .funct3 (funct3[i]),
+            .rs1 (rs1[i]),
+            .rs2 (rs2[i]),
+            .funct7 (funct7[i]),
+            .imm (imm[i])
+        );
+    end
+endgenerate
+
+endmodule
+
+
+module decode_single #(
+    parameter INSTR_WIDTH = 32
+) (
+    input [INSTR_WIDTH-1:0] instr
+    
+    output logic [6:0] opcode,
+    output logic [4:0] rd,
+    output logic [2:0] funct3,
+    output logic [4:0] rs1,
+    output logic [4:0] rs2,
+    output logic [6:0] funct7,
+    output logic [31:0] imm,
+
+    output control_signals [7:0] ctrls
+    output logic reg_write,
+    output logic alu_src,
+    output logic mem_read,
+    output logic mem_write,
+    output logic mem_to_reg,
+    output logic alu_op
+);
+
+assign opcode = instr[6:0];
+
+always_comb begin
+    case(opcode):
+        7'b0110011: begin // R-type (ADD, XOR)
+            rd      = instr[11:7];
+            funct3  = instr[14:12];
+            rs1     = instr[19:15];
+            rs2     = instr[24:20];
+            funct7  = instr[31:25];
+            imm     = 'd0;  // no immediate, set to 0
+
+            ctrls[REGWRITE]     = 1'b1;
+            ctrls[ALUSRC]       = 1'b0;
+            ctrls[MEMTOREG]     = 1'b0;
+            ctrls[MEMRE]        = 1'b0;
+            ctrls[MEMWR]        = 1'b0;
+            ctrls[BYTEORWORD]   = 1'b0;
+            ctrls[ALUOP1:ALUOP0]= 2'b10; // R-type ALUOP
+        end
+
+        7'b0000011: begin // Load (LW, LB)
+            rd      = instr[11:7];
+            funct3  = instr[14:12];
+            rs1     = instr[19:15];
+            rs2     = 'd0; // no rs2
+            funct7  = 'd0; // no funct7
+            imm     = {instr[31:20], 20'b0} >>> 20; // arithmetic right shift to sign extend
+
+            ctrls[REGWRITE]     = 1'b1;
+            ctrls[ALUSRC]       = 1'b1;
+            ctrls[MEMTOREG]     = 1'b1;
+            ctrls[MEMRE]        = 1'b1;
+            ctrls[MEMWR]        = 1'b0;
+            ctrls[BYTEORWORD]   = (funct3 == 3'b000) ? 1'b0 : 1'b1;
+            ctrls[ALUOP1:ALUOP0]= 2'b00; // ADD ALUOP
+        end
+        
+        7'b0010011: begin // I-type (ADDI, ORI, SRAI)
+            rd      = instr[11:7];
+            funct3  = instr[14:12];
+            rs1     = instr[19:15];
+            rs2     = 'd0; // no rs2
+            funct7  = 'd0; // no funct7
+            imm     = {instr[31:20], 20'b0} >>> 20;
+
+            ctrls[REGWRITE]     = 1'b1;
+            ctrls[ALUSRC]       = 1'b1;
+            ctrls[MEMTOREG]     = 1'b0;
+            ctrls[MEMRE]        = 1'b0;
+            ctrls[MEMWR]        = 1'b0;
+            ctrls[BYTEORWORD]   = 1'b1; // WORD
+            ctrls[ALUOP1:ALUOP0]= 2'b10;
+        end
+
+        7'b0100011: begin // Store
+            rd      = instr[11:7];
+            funct3  = instr[14:12];
+            rs1     = instr[19:15];
+            rs2     = instr[24:20];
+            funct7  = 'd0; // no funct7
+            imm     = {instr[31:25], instr[11:7], 20'b0} >>> 20; 
+            
+            ctrls[REGWRITE]     = 1'b0;
+            ctrls[ALUSRC]       = 1'b1;
+            ctrls[MEMTOREG]     = 1'b0;
+            ctrls[MEMRE]        = 1'b0;
+            ctrls[MEMWR]        = 1'b1;
+            ctrls[ALUOP1:ALUOP0]= 2'b10;
+            ctrls[BYTEORWORD] = (funct3 == 3'b000) ? 1'b0 : 1'b1;
+        end
+
+        7'b0110111: begin // LUI
+            rd      = instr[11:7];
+            funct3  = instr[14:12];
+            rs1     = 'd0; // no rs1
+            rs2     = 'd0; // no rs2
+            funct7  = 'd0; // no funct7
+            imm     = {instr[31:12], 12'b0}; 
+
+            ctrls[REGWRITE]     = 1'b1;
+            ctrls[ALUSRC]       = 1'b1;
+            ctrls[MEMTOREG]     = 1'b0;
+            ctrls[MEMRE]        = 1'b0;
+            ctrls[MEMWR]        = 1'b0;
+            ctrls[BYTEORWORD]   = 1'b1;     // WORD
+            ctrls[ALUOP1:ALUOP0]= 2'b00;    // force ADD with x0
+        end
+
+    endcase
+    
+end
+
+
+endmodule
