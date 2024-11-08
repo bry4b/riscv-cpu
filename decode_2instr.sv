@@ -1,32 +1,78 @@
 module decode #(
     parameter INSTR_WIDTH = 32,
-    parameter N_INSTR_PER_CYCLE = 1
+    parameter N_INSTR_PER_CYCLE = 2
 ) (
-    input [INSTR_WIDTH-1:0] instr,
+    input [INSTR_WIDTH-1:0] instr_A,
+    input [INSTR_WIDTH-1:0] instr_B,
 
-    output logic [6:0]  opcode,
-    output logic [4:0]  rd,
-    output logic [2:0]  funct3,
-    output logic [4:0]  rs1,
-    output logic [4:0]  rs2,
-    output logic [6:0]  funct7,
-    output logic [31:0] imm,
-    output logic [7:0]  ctrls,
+    output logic [6:0]  opcode_A,
+    output logic [4:0]  rd_A,
+    output logic [2:0]  funct3_A,
+    output logic [4:0]  rs1_A,
+    output logic [4:0]  rs2_A,
+    output logic [6:0]  funct7_A,
+    output logic [31:0] imm_A,
+    output logic [7:0]  ctrls_A,
+    
+    output logic [6:0]  opcode_B,
+    output logic [4:0]  rd_B,
+    output logic [2:0]  funct3_B,
+    output logic [4:0]  rs1_B,
+    output logic [4:0]  rs2_B,
+    output logic [6:0]  funct7_B,
+    output logic [31:0] imm_B,
+    output logic [7:0]  ctrls_B
 );
 
 `include "constants.sv"
 
-decode_single #(.INSTR_WIDTH(INSTR_WIDTH)) d0 (
-    .instr (instr),
-    .opcode (opcode),
-    .rd (rd),
-    .funct3 (funct3),
-    .rs1 (rs1),
-    .rs2 (rs2),
-    .funct7 (funct7),
-    .imm (imm),
-    .ctrls (ctrls)
-);
+logic [INSTR_WIDTH-1:0] instr [0:1];
+logic [6:0] opcode  [0:1];
+logic [4:0] rd      [0:1];
+logic [2:0] funct3  [0:1];
+logic [4:0] rs1     [0:1];
+logic [4:0] rs2     [0:1];
+logic [6:0] funct7  [0:1];
+logic [31:0] imm    [0:1];
+logic [7:0] ctrls   [0:1];
+
+assign instr[0]     = instr_A;
+assign opcode_A     = opcode[0];
+assign rd_A         = rd[0];
+assign funct3_A     = funct3[0];
+assign rs1_A        = rs1[0];
+assign rs2_A        = rs2[0];
+assign funct7_A     = funct7[0];
+assign imm_A        = imm[0];
+assign ctrls_A      = ctrls[0];
+
+assign instr[1]     = instr_B;
+assign opcode_B     = opcode[1];
+assign rd_B         = rd[1];
+assign funct3_B     = funct3[1];
+assign rs1_B        = rs1[1];
+assign rs2_B        = rs2[1];
+assign funct7_B     = funct7[1];
+assign imm_B        = imm[1];
+assign ctrls_B      = ctrls[1];
+
+genvar i;
+
+generate 
+    for (i = 0; i < N_INSTR_PER_CYCLE; i = i + 1) begin : instr_decoders
+        decode_single #(.INSTR_WIDTH(INSTR_WIDTH)) d0 (
+            .instr (instr[i]),
+            .opcode (opcode[i]),
+            .rd (rd[i]),
+            .funct3 (funct3[i]),
+            .rs1 (rs1[i]),
+            .rs2 (rs2[i]),
+            .funct7 (funct7[i]),
+            .imm (imm[i]),
+            .ctrls (ctrls[i])
+        );
+    end
+endgenerate
 
 endmodule
 
@@ -44,6 +90,13 @@ module decode_single #(
     output logic [6:0] funct7,
     output logic [31:0] imm,
     output [7:0] ctrls
+    // ctrls[7]     = REGWRITE
+    // ctrls[6]     = ALUSRC
+    // ctrls[5]     = MEMTOREG
+    // ctrls[4]     = MEMRE
+    // ctrls[3]     = MEMWR
+    // ctrls[2]     = BYTEORWORD
+    // ctrls[1:0]   = ALUOP
 );
 
 assign opcode = instr[6:0];
