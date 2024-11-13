@@ -8,95 +8,114 @@ module reorder_buffer #(
 
     // new ROB entry
     input [7:0] pc,
-    input [REG_SIZE:0] new_dest_reg,
-    input [REG_SIZE:0] old_dest_reg,
+    input [NUM_REG_LOG2:0] old_p_reg,
+    input [NUM_REG_LOG2:0] new_p_reg,
+    input [NUM_REG_LOG2-1:0] arch_reg,
+    input in_valid,
 
-    // change if an instruction has completed
-    input index_in,
-    input completed,
+    // store destination register data if an instruction has completed
+    input [ROB_SIZE_LOG2-1:0] index_A,
+    input [ROB_SIZE_LOG2-1:0] index_B,
+    input [REG_SIZE-1:0] complete_A_data,
+    input [REG_SIZE-1:0] complete_B_data,
+    input [1:0] completed,
     
-    // index keeps track of top-most instruction in ROB
-    output logic [$clog2(ROB_SIZE)-1:0] index_out,
-    output logic [REG_SIZE:0] new_dest_reg_out,
-    output logic [REG_SIZE:0] old_dest_reg_out,
-    
-    // if completed out is 2, can retire top 2 instructions in ROB
-    output logic [1:0] completed_out,
-    output logic valid
+    // commit instruction at rob_head if completed & update register file
+    // commit 1 or 2 instructions per cycle? 
+    output logic [NUM_REG_LOG2:0] commit_reg_A,
+    output logic [NUM_REG_LOG2:0] commit_reg_B,
+    output logic [REG_SIZE-1:0] commit_reg_A_data,
+    output logic [REG_SIZE-1:0] commit_reg_B_data,
+    output logic [1:0] commit_valid, 
+
+    output logic [ROB_SIZE_LOG2-1:0] rob_tail,
+    output logic rob_full
 );
 
 `include "constants.sv"
 
-/*
-ROB layout:
-bits [21] valid
-bits [20:15] new desination register
-bits [14:9] old destination register
-bits [8:1] pc
-bits [0] completed
+localparam ROB_SIZE_LOG2 = $clog2(ROB_SIZE);
+
+/*  
+    reorder buffer layout:
+    [57:26] destination register data
+    [25:21] destination architectural register
+    [20:15] new destination physical register
+    [14:9]  old destination physical register
+    [8:1]   pc
+    [0]     completed                               
 */
-logic [21:0] rob [0:ROB_SIZE-1];
+logic [57:0] rob [0:ROB_SIZE-1];
 
-logic [$clog2(ROB_SIZE)-1:0] rob_head = 4'b0;
-logic [$clog2(ROB_SIZE)-1:0] rob_tail = 4'b0;
-
+logic [ROB_SIZE_LOG2-1:0] rob_head; // pointer to head of circular buffer
 logic stall;
-assign stall = stall_in | (rob_tail == ROB_SIZE-1);
+assign rob_full = (rob_head == rob_tail + 1'b1);
+assign stall = stall_in | rob_full; // stall if ROB is full
 
 initial begin
     for (int i = 0; i < ROB_SIZE; i = i + 1) begin
-        rob[i] = 22'b0;
+        rob[i] = 1'b0;
     end
 end
 
-always_comb begin
-
-end
-
 always_ff @(posedge clk) begin
-    if (~stall_in) begin
-        rob[rob_tail][21] <= 1'b1;
-        rob[rob_tail][20:15] <= new_dest_reg;
-        rob[rob_tail][14:9] <= old_dest_reg;
-        rob[rob_tail][8:1] <= pc;
-        rob[rob_tail][0] <= 1'b0;
+    if (rst) begin
+        rob_head <= 1'b0;
+        rob_tail <= 1'b0;
+        for (int i = 0; i < ROB_SIZE; i = i + 1) begin
+            rob[i] = 1'b0;
+        end
+    end else begin
+        if (~stall & in_valid) begin
+        // push new entry to ROB
+        rob[rob_tail][0]        <= 1'b0;
+        rob[rob_tail][8:1]      <= pc;
+        rob[rob_tail][14:9]     <= old_p_reg;
+        rob[rob_tail][20:15]    <= new_p_reg;
+        rob[rob_tail][25:21]    <= arch_reg;
+        rob[rob_tail][57:26]    <= 1'b0;
 
         rob_tail <= rob_tail + 1'b1;
 
-        // push entries of ROB to beginning !
-        if (rob_tail == ROB_SIZE-1) begin
-            for (int i = 0; i < rob_tail - rob_head; i++) {
-                rob[i] <= rob[rob_head+i];
-                rob[rob_head+i] <= 22'b0;
-            }
-            rob_tail <= rob_tail - rob_head;
-            rob_head <= 0;
+        // we might not need this if we keep ROB as circular buffer
+        // // push entries of ROB to beginning !
+        // if (rob_tail == ROB_SIZE-1) begin
+        //     for (int i = 0; i < rob_tail - rob_head; i++) {
+        //         rob[i] <= rob[rob_head+i];
+        //         rob[rob_head+i] <= 22'b0;
+        //     }
+        //     rob_tail <= rob_tail - rob_head;
+        //     rob_head <= 0;
+        // end
         end
-    end
     
-    // complete
-    if (completed) begin
-        rob[index_in][0] = 1'b1; // set completed
-       
-        // change FUs
+        // complete
+        if (completed[0]) begin
+            rob[index_A][0] <= 1'b1; // set completed
+            rob[index_A][57:26] <= complete_A_data; // store register data
         
-        // change ready table
-        ready_table[rob[index_in][20:15]] = 1'b1;
-        
-        
+            // change FUs
+            // i think this should be done outside the ROB (the FUs themselves can output a bit to indicate if they are busy)
+            
+            // change ready table
+            // i think this could be tracked in the issue queue 
+            // ready_table[rob[index_A][20:15]] <= 1'b1;
+        end
+        if (completed[1]) begin
+            rob[index_B][0] <= 1'b1; // set completed
+            rob[index_B][57:26] <= complete_B_data; // store register data
+        end
     end
 end
 
+// commit when rob_head is completed (up to two instructions at a time)
 always_ff @(posedge clk) begin
-    // retire
-    if (rob_head < ROB_SIZE-1 && rob[rob_head][0] == 1'b1 && rob[rob_head+1][0] == 1'b1) begin
-        // retire top two instructions
-        index_out <= rob_head;
+    if (rob[rob_head][0] == 1'b1 && rob[rob_head+1'b1][0] == 1'b1) begin
+        // commit data from instruction at head of ROB
+        commit_reg_A = rob[rob_head][20:15];
+        commit_reg_B = rob[rob_head+1'b1][20:15];
+        commit_reg_A_data = rob[rob_head][];
         new_dest_reg_out <= rob[rob_head]
-
-    end else if (rob_head < ROB_SIZE && rob[rob_head][0] == 1'b1) begin
-        // retire top instruction
-        
     end
 end
 

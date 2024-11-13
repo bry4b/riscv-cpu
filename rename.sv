@@ -5,31 +5,27 @@ module rename # (   // rename stage processing one instruction per cycle
     input rst,
     input stall_in,
 
-    input [REG_SIZE:0] prd_free,
+    input [NUM_REG_LOG2:0] prd_free,
     input commit_free, // assert HIGH when instruction is committed to free up prd_free in free pool
 
-    input [REG_SIZE-1:0] rd_A,
-    input [REG_SIZE-1:0] rs1_A,
-    input [REG_SIZE-1:0] rs2_A,
+    input [NUM_REG_LOG2-1:0] rd_A,
+    input [NUM_REG_LOG2-1:0] rs1_A,
+    input [NUM_REG_LOG2-1:0] rs2_A,
 
-    output logic [REG_SIZE:0] prd_A_old,
-    output logic [REG_SIZE:0] prd_A_new,
-    output logic [REG_SIZE:0] prs1_A,
-    output logic [REG_SIZE:0] prs2_A
+    output logic [NUM_REG_LOG2:0] prd_A_old,
+    output logic [NUM_REG_LOG2:0] prd_A_new,
+    output logic [NUM_REG_LOG2:0] prs1_A,
+    output logic [NUM_REG_LOG2:0] prs2_A
 );
 
 `include "constants.sv"
 
-localparam NUM_P_REG = 2*NUM_REG;
-localparam REG_SIZE = $clog2(NUM_REG);
-
-// logic [5:0] register_alias_table [0:NUM_REG-1] = '{foreach (register_alias_table[i]) init_RAT(i)};  // index corresponds to a-reg, 6-bit value corresponds to p-reg
 logic [5:0] register_alias_table [0:NUM_REG-1];
 
 // 64-bit vector for free pool: 1 at index represent free register, 0 at index represents busy register
 logic [NUM_P_REG-1:0] free_pool;                  
 
-logic [REG_SIZE:0] first_free_prd; // rd_A pulls from MS asserted bit of free pool
+logic [NUM_REG_LOG2:0] first_free_prd; // rd_A pulls from MS asserted bit of free pool
 logic encoder_valid;
 
 logic stall;
@@ -65,7 +61,7 @@ always_ff @(posedge clk) begin
         // initialize RAT and free pool
         int i;
         for (i = 0; i < NUM_REG-1; i = i+1) begin
-            register_alias_table[i] <= REG_SIZE'(i);
+            register_alias_table[i] <= NUM_REG_LOG2'(i);
             free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
         end
     end else if (~stall) begin
@@ -81,7 +77,7 @@ always_ff @(posedge clk) begin
         end
         
         // assert that x0 == p0
-        register_alias_table[0] <= REG_SIZE'('d0);
+        register_alias_table[0] <= NUM_REG_LOG2'('d0);
     end
 end
 
