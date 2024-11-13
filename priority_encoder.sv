@@ -24,14 +24,14 @@ generate
         priority_encoder_MSB_4b encoder_block_MSB (
             .in (in[(i<<2)+3:(i<<2)]),
             .out (block_outs_MSB[i]),
-            .valid (valid_blocks_MSB(i))
+            .valid (valid_blocks_MSB[i])
         );
 
         if (TWO_SIDE) begin
             priority_encoder_LSB_4b encoder_block_LSB (
                 .in (in[(i<<2)+3:(i<<2)]),
                 .out (block_outs_LSB[i]),
-                .valid (valid_blocks_LSB(i))        
+                .valid (valid_blocks_LSB[i])        
             );
         end
     end
@@ -40,10 +40,9 @@ endgenerate
 always_comb begin
     out_MSB = 1'b0;
     valid_MSB = 1'b0;
-    integer j;
-    for (j = NUM_BLOCKS-1; j >= 0; j = j - 1) begin
+    for (int j = NUM_BLOCKS-1; j >= 0; j = j - 1) begin
         if (valid_blocks_MSB[j]) begin
-            out_MSB = {j, block_outs[j]};
+            out_MSB = {j, block_outs_MSB[j]};
             valid_MSB = 1'b1;
             break;
         end
@@ -54,10 +53,9 @@ always_comb begin
     if (TWO_SIDE) begin
         out_LSB = 1'b0;
         valid_LSB = 1'b0;
-        integer j;
-        for (j = 0; j < NUM_BLOCKS; j = j + 1) begin
+        for (int j = 0; j < NUM_BLOCKS; j = j + 1) begin
             if (valid_blocks_LSB[j]) begin
-                out_LSB = {j, block_outs[j]};
+                out_LSB = {j, block_outs_LSB[j]};
                 valid_LSB = 1'b1;
                 break;
             end

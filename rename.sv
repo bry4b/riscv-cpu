@@ -62,11 +62,11 @@ always_ff @(posedge clk) begin
         int i;
         for (i = 0; i < NUM_REG-1; i = i+1) begin
             register_alias_table[i] <= REG_SIZE'(i);
-            free_pool[i] <= (i < NUM_REG) ? 0 : 1;
+            free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
         end
     end else begin
         // recover free register after commit
-        if (free_valid) begin
+        if (commit_free) begin
             free_pool[prd_free] <= 1'b1;
         end
 

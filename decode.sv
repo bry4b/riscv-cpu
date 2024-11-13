@@ -11,7 +11,7 @@ module decode #(
     output logic [4:0]  rs2,
     output logic [6:0]  funct7,
     output logic [31:0] imm,
-    output logic [7:0]  ctrls,
+    output logic [7:0]  ctrls
 );
 
 `include "constants.sv"
@@ -43,7 +43,7 @@ module decode_single #(
     output logic [4:0] rs2,
     output logic [6:0] funct7,
     output logic [31:0] imm,
-    output [7:0] ctrls
+    output logic [7:0] ctrls
 );
 
 assign opcode = instr[6:0];
