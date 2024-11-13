@@ -3,9 +3,10 @@ module rename # (   // rename stage processing one instruction per cycle
 ) (
     input clk,
     input rst,
+    input stall_in,
 
     input [REG_SIZE:0] prd_free,
-    input commit_free,              // assert HIGH when instruction is committed to free up prd_free in free pool
+    input commit_free, // assert HIGH when instruction is committed to free up prd_free in free pool
 
     input [REG_SIZE-1:0] rd_A,
     input [REG_SIZE-1:0] rs1_A,
@@ -19,20 +20,23 @@ module rename # (   // rename stage processing one instruction per cycle
 
 `include "constants.sv"
 
-localparam NUM_ENTRIES = 2*NUM_REG;
+localparam NUM_P_REG = 2*NUM_REG;
 localparam REG_SIZE = $clog2(NUM_REG);
 
 // logic [5:0] register_alias_table [0:NUM_REG-1] = '{foreach (register_alias_table[i]) init_RAT(i)};  // index corresponds to a-reg, 6-bit value corresponds to p-reg
 logic [5:0] register_alias_table [0:NUM_REG-1];
 
 // 64-bit vector for free pool: 1 at index represent free register, 0 at index represents busy register
-logic [NUM_ENTRIES-1:0] free_pool;                  
+logic [NUM_P_REG-1:0] free_pool;                  
 
-logic [REG_SIZE:0] first_free_prd;     // rd_A pulls from MS asserted bit of free pool
+logic [REG_SIZE:0] first_free_prd; // rd_A pulls from MS asserted bit of free pool
 logic encoder_valid;
 
+logic stall;
+assign stall = ~encoder_valid | stall_in;
+
 priority_encoder #(
-    .WIDTH(NUM_ENTRIES),
+    .WIDTH(NUM_P_REG),
     .TWO_SIDE(0)
 ) encoder (
     .in (free_pool),
@@ -64,7 +68,7 @@ always_ff @(posedge clk) begin
             register_alias_table[i] <= REG_SIZE'(i);
             free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
         end
-    end else begin
+    end else if (~stall) begin
         // recover free register after commit
         if (commit_free) begin
             free_pool[prd_free] <= 1'b1;

@@ -12,6 +12,8 @@ module RISCV_top #(
     output logic done
 );
 
+logic [7:0] pc;
+
 always_ff @(posedge clk) begin
     if (rst) begin
         pc_A <= 0;
