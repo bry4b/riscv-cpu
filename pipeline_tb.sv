@@ -1,8 +1,11 @@
 `timescale 1ns/1ns
 
-module decode_tb (
-    output logic clk
+module pipeline_tb (
+    output logic clk,
+    output logic rst
 );
+
+`include "constants.sv"
 
 logic [7:0] program_count;
 logic [31:0] instruction;
@@ -16,6 +19,12 @@ logic [6:0] funct7;
 logic [31:0] imm;
 logic [7:0] ctrls;
 
+logic [5:0] prd_old;
+logic [5:0] prd_new;
+logic [5:0] prs1;
+logic [5:0] prs2;
+
+
 instr_fetch #(
     .SIZE(48),
     .FILE("F:\\bryan\\Documents\\school yuck\\ucla\\UCLA 24F\\eeM116C\\189 project\\riscv-cpu\\r-test-hex.txt")
@@ -25,7 +34,7 @@ instr_fetch #(
     .mem_data(instruction)
 );
 
-decode UUT (
+decode DECODE (
     .instr(instruction),
     .opcode(opcode),
     .rd(rd),
@@ -37,23 +46,45 @@ decode UUT (
     .ctrls(ctrls)
 );
 
+rename UUT (
+    .clk(clk),
+    .rst(rst),
+    .stall_in(1'b0),
+    .prd_free(1'b0),
+    .commit_free(1'b0),
+
+    .rd_A(rd),
+    .rs1_A(rs1),
+    .rs2_A(rs2),
+
+    .prd_A_old(prd_old),
+    .prd_A_new(prd_new),
+    .prs1_A(prs1),
+    .prs2_A(prs2)
+);
+
 initial begin
     clk = 0;
+    rst = 1;
+    #10 rst = 0;
     program_count = 8'd0;
-    #10;
-    assert (instruction == 32'h00600113);
+    #10 assert (instruction == 32'h00600113);
     
-
-    #20 program_count = 8'h4;
     #20 assert (instruction == 32'h00f00193);
 
-    #100 
-	$stop;
+    #100 $stop;
 end
 
 always begin
     #10 clk = ~clk;
 end
 
+always @(posedge clk) begin
+    if (rst) begin
+        program_count <= 8'd0;
+    end else begin
+        program_count <= program_count + 3'd4;
+    end
+end
 
 endmodule

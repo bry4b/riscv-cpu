@@ -4,9 +4,9 @@ module priority_encoder #(
 ) (
     input [WIDTH-1:0] in,
 
-    output [$clog2(WIDTH)-1:0] out_MSB,
-    output [$clog2(WIDTH)-1:0] out_LSB,
-    output valid
+    output logic [$clog2(WIDTH)-1:0] out_MSB,
+    output logic [$clog2(WIDTH)-1:0] out_LSB,
+    output logic valid
 );
 
 logic valid_MSB, valid_LSB;
@@ -42,7 +42,7 @@ always_comb begin
     valid_MSB = 1'b0;
     for (int j = NUM_BLOCKS-1; j >= 0; j = j - 1) begin
         if (valid_blocks_MSB[j]) begin
-            out_MSB = {j, block_outs_MSB[j]};
+            out_MSB = {j[3:0], block_outs_MSB[j]};
             valid_MSB = 1'b1;
             break;
         end
@@ -74,8 +74,8 @@ endmodule
 
 module priority_encoder_MSB_4b (
     input [3:0] in,                 // 4b input 
-    output [1:0] out,               // 2b output: index of MS asserted bit
-    output valid                    // HIGH if asserted bit found
+    output logic [1:0] out,               // 2b output: index of MS asserted bit
+    output logic valid                    // HIGH if asserted bit found
 );
 always_comb begin
     if (in[3]) out = 2'b11;
@@ -88,8 +88,8 @@ endmodule
 
 module priority_encoder_LSB_4b (
     input [3:0] in,
-    output [1:0] out,
-    output out_valid
+    output logic [1:0] out,
+    output logic out_valid
 );
 always_comb begin
     if (in[0]) out = 2'b00;

@@ -18,7 +18,7 @@ module reorder_buffer #(
     input [ROB_SIZE_LOG2-1:0] index_B,
     input [REG_SIZE-1:0] complete_A_data,
     input [REG_SIZE-1:0] complete_B_data,
-    input [1:0] completed,
+    input [1:0] complete,
     
     // commit instruction at rob_head if completed & update register file
     // commit 1 or 2 instructions per cycle? 
@@ -48,6 +48,8 @@ localparam ROB_SIZE_LOG2 = $clog2(ROB_SIZE);
 logic [57:0] rob [0:ROB_SIZE-1];
 
 logic [ROB_SIZE_LOG2-1:0] rob_head; // pointer to head of circular buffer
+logic [ROB_SIZE_LOG2-1:0] rob_head_d; // pointer to head of circular buffer
+
 logic stall;
 assign rob_full = (rob_head == rob_tail + 1'b1);
 assign stall = stall_in | rob_full; // stall if ROB is full
@@ -66,27 +68,29 @@ always_ff @(posedge clk) begin
             rob[i] = 1'b0;
         end
     end else begin
+        rob_head <= rob_head_d;
+
         if (~stall & in_valid) begin
-        // push new entry to ROB
-        rob[rob_tail][0]        <= 1'b0;
-        rob[rob_tail][8:1]      <= pc;
-        rob[rob_tail][14:9]     <= old_p_reg;
-        rob[rob_tail][20:15]    <= new_p_reg;
-        rob[rob_tail][25:21]    <= arch_reg;
-        rob[rob_tail][57:26]    <= 1'b0;
+            // push new entry to ROB
+            rob[rob_tail][0]        <= 1'b0;
+            rob[rob_tail][8:1]      <= pc;
+            rob[rob_tail][14:9]     <= old_p_reg;
+            rob[rob_tail][20:15]    <= new_p_reg;
+            rob[rob_tail][25:21]    <= arch_reg;
+            rob[rob_tail][57:26]    <= 1'b0;
 
-        rob_tail <= rob_tail + 1'b1;
+            rob_tail <= rob_tail + 1'b1;
 
-        // we might not need this if we keep ROB as circular buffer
-        // // push entries of ROB to beginning !
-        // if (rob_tail == ROB_SIZE-1) begin
-        //     for (int i = 0; i < rob_tail - rob_head; i++) {
-        //         rob[i] <= rob[rob_head+i];
-        //         rob[rob_head+i] <= 22'b0;
-        //     }
-        //     rob_tail <= rob_tail - rob_head;
-        //     rob_head <= 0;
-        // end
+            // we might not need this if we keep ROB as circular buffer
+            // // push entries of ROB to beginning !
+            // if (rob_tail == ROB_SIZE-1) begin
+            //     for (int i = 0; i < rob_tail - rob_head; i++) {
+            //         rob[i] <= rob[rob_head+i];
+            //         rob[rob_head+i] <= 22'b0;
+            //     }
+            //     rob_tail <= rob_tail - rob_head;
+            //     rob_head <= 0;
+            // end
         end
     
         // complete
@@ -109,14 +113,31 @@ always_ff @(posedge clk) begin
 end
 
 // commit when rob_head is completed (up to two instructions at a time)
-always_ff @(posedge clk) begin
+always_comb begin
     if (rob[rob_head][0] == 1'b1 && rob[rob_head+1'b1][0] == 1'b1) begin
         // commit data from instruction at head of ROB
         commit_reg_A = rob[rob_head][20:15];
         commit_reg_B = rob[rob_head+1'b1][20:15];
-        commit_reg_A_data = rob[rob_head][];
-        new_dest_reg_out <= rob[rob_head]
+        commit_reg_A_data = rob[rob_head][57:26];
+        commit_reg_B_data = rob[rob_head+1'b1][57:26];
+        commit_valid = 2'b10;
+        rob_head_d = rob_head + 2'd2;
+    end else if (rob[rob_head][0] == 1'b1) begin
+        commit_reg_A = rob[rob_head][20:15];
+        commit_reg_B = 1'b0;
+        commit_reg_A_data = rob[rob_head][57:26];
+        commit_reg_B_data = 1'b0;
+        commit_valid = 2'b01;
+        rob_head_d = rob_head + 1'd1;
+    end else begin
+        commit_reg_A = 1'b0;
+        commit_reg_B = 1'b0;
+        commit_reg_A_data = 1'b0;
+        commit_reg_B_data = 1'b0;
+        commit_valid = 2'b00;
+        rob_head_d = rob_head;
     end
+
 end
 
 endmodule

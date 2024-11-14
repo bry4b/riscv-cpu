@@ -26,7 +26,7 @@ decode_single #(.INSTR_WIDTH(INSTR_WIDTH)) d0 (
     .rs2 (rs2),
     .funct7 (funct7),
     .imm (imm),
-    .ctrls (ctrls)
+    .ctrls (ctrls),
     .alu_sel (alu_sel)
 );
 
@@ -173,7 +173,7 @@ module decode_ALUOp # (
     input [INSTR_WIDTH-1:0] instr,
     input [1:0] aluop,
 
-    output [3:0] alu_sel
+    output logic [3:0] alu_sel
 );
 
 always_comb begin

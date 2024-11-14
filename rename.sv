@@ -1,5 +1,7 @@
 module rename # (   // rename stage processing one instruction per cycle
-    parameter NUM_REG = 32
+    parameter NUM_REG = 32,
+    parameter NUM_REG_LOG2 = $clog2(NUM_REG),
+    parameter NUM_P_REG = NUM_REG*2
 ) (
     input clk,
     input rst,
@@ -18,14 +20,13 @@ module rename # (   // rename stage processing one instruction per cycle
     output logic [NUM_REG_LOG2:0] prs2_A
 );
 
-`include "constants.sv"
-
 logic [5:0] register_alias_table [0:NUM_REG-1];
 
 // 64-bit vector for free pool: 1 at index represent free register, 0 at index represents busy register
 logic [NUM_P_REG-1:0] free_pool;                  
 
 logic [NUM_REG_LOG2:0] first_free_prd; // rd_A pulls from MS asserted bit of free pool
+logic [NUM_REG_LOG2:0] last_free_prd;
 logic encoder_valid;
 
 logic stall;
@@ -37,18 +38,18 @@ priority_encoder #(
 ) encoder (
     .in (free_pool),
     .out_MSB (first_free_prd),
-    .out_LSB (1'b0),
+    .out_LSB (last_free_prd),
     .valid (encoder_valid)
 );
 
 always_comb begin
     // assign new, old destination registers to go to ROB
-    if (rd_A != 'd0) begin
+    if (rd_A != 1'b0) begin
         prd_A_old = register_alias_table[rd_A];
         prd_A_new = first_free_prd;
     end else begin
-        prd_A_old = 'd0;
-        prd_A_new = 'd0;
+        prd_A_old = 1'b0;
+        prd_A_new = 1'b0;
     end
 
     // rename rs1
@@ -56,13 +57,15 @@ always_comb begin
     prs2_A = register_alias_table[rs2_A];
 end
 
-always_ff @(posedge clk) begin
+always @(posedge clk) begin
     if (rst) begin
         // initialize RAT and free pool
         int i;
-        for (i = 0; i < NUM_REG-1; i = i+1) begin
+        for (i = 0; i < NUM_REG; i = i+1) begin
             register_alias_table[i] <= NUM_REG_LOG2'(i);
-            free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
+        end
+        for (i = 0; i < NUM_P_REG; i = i+1) begin
+            free_pool[i] = (i < NUM_REG) ? 1'b0 : 1'b1;
         end
     end else if (~stall) begin
         // recover free register after commit
@@ -77,7 +80,18 @@ always_ff @(posedge clk) begin
         end
         
         // assert that x0 == p0
-        register_alias_table[0] <= NUM_REG_LOG2'('d0);
+        register_alias_table[0] <= 1'b0;
+    end
+end
+
+initial begin
+    // initialize RAT and free pool
+    int i;
+    for (i = 0; i < NUM_REG; i = i+1) begin
+        register_alias_table[i] = NUM_REG_LOG2'(i);
+    end
+    for (i = 0; i < NUM_P_REG; i = i+1) begin
+        free_pool[i] = (i < NUM_REG) ? 1'b0 : 1'b1;
     end
 end
 
