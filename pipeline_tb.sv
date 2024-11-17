@@ -27,7 +27,8 @@ logic [5:0] prs2;
 
 instr_fetch #(
     .SIZE(48),
-    .FILE("F:\\bryan\\Documents\\school yuck\\ucla\\UCLA 24F\\eeM116C\\189 project\\riscv-cpu\\r-test-hex.txt")
+    // .FILE("F:\\bryan\\Documents\\school yuck\\ucla\\UCLA 24F\\eeM116C\\189 project\\riscv-cpu\\r-test-hex.txt")
+    .FILE(".\\r-test-hex.txt")
 )IMEM ( 
     .clk(clk), 
     .addr(program_count), 
