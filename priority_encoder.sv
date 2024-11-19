@@ -37,32 +37,39 @@ generate
     end
 endgenerate
 
+logic breakout_A, breakout_B;
 always_comb begin
     out_MSB = 1'b0;
     valid_MSB = 1'b0;
+    breakout_A = 1'b0;
     for (int j = NUM_BLOCKS-1; j >= 0; j = j - 1) begin
-        if (valid_blocks_MSB[j]) begin
-            out_MSB = {j[3:0], block_outs_MSB[j]};
-            valid_MSB = 1'b1;
-            break;
+        if (~breakout_A) begin
+            if (valid_blocks_MSB[j]) begin
+                out_MSB = {j[3:0], block_outs_MSB[j]};
+                valid_MSB = 1'b1;
+                breakout_A = 1'b1;
+            end
         end
     end
 end
-
 always_comb begin
     if (TWO_SIDE) begin
         out_LSB = 1'b0;
         valid_LSB = 1'b0;
+        breakout_B = 1'b0;
         for (int j = 0; j < NUM_BLOCKS; j = j + 1) begin
-            if (valid_blocks_LSB[j]) begin
-                out_LSB = {j, block_outs_LSB[j]};
-                valid_LSB = 1'b1;
-                break;
+            if (~breakout_B) begin
+                if (valid_blocks_LSB[j]) begin
+                    out_LSB = {j, block_outs_LSB[j]};
+                    valid_LSB = 1'b1;
+                    breakout_B = 1'b1;
+                end
             end
         end
     end else begin
         out_LSB = 1'b0;
         valid_LSB = 1'b1;
+        breakout_B = 1'b1;
     end
 end
 
