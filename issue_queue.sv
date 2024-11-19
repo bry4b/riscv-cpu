@@ -24,24 +24,23 @@ module issue_queue #(
 
 /*  
     reservation station data layout:
-    [127:96]    dest data
-    [95:64]     src 1 
-    [63:32]     src 2
-    [31:0]      immediate           
+    [63:32]     src 1 
+    [31:0]      src 2 / immediate           
 */
-logic [REG_SIZE*4-1:0] iq_data [0:IQ_SIZE-1];
+logic [REG_SIZE*2-1:0] iq_data [0:IQ_SIZE-1];
 
 /* 
     reservation station tags layout:
-    [8]         tag for dest reg 
-    [7]         tag for src 1
-    [6]         tag for src 2 
-                    HIGH: src 2 contains real data 
-                    LOW: src 2 contains iq_data row index where dest data contains data 
-    [5:4]       assigned functional unit
+    [27:25]     functional units ready
+    [24:19]     destination tag
+    [18:13]     src 1 tag
+    [12]        src 1 ready
+    [11:6]      src 2 tag
+    [5]         src 2 ready
+    [4]         immediate flag (1 if src2 holds immediate value)
     [3:0]       ROB index
 */
-logic [8:0] iq_tags [0:IQ_SIZE-1]; 
+logic [27:0] iq_tags [0:IQ_SIZE-1]; 
 
 logic [4:0] register_status [0:NUM_REG*2-1];
 

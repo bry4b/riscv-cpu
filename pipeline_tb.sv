@@ -19,10 +19,10 @@ logic [6:0] funct7;
 logic [31:0] imm;
 logic [7:0] ctrls;
 
-logic [5:0] prd_old;
-logic [5:0] prd_new;
-logic [5:0] prs1;
-logic [5:0] prs2;
+logic [5:0] tag_old;
+logic [5:0] tag_new;
+logic [5:0] tag_rs1;
+logic [5:0] tag_rs2;
 
 
 instr_fetch #(
@@ -54,14 +54,14 @@ rename UUT (
     .prd_free(1'b0),
     .commit_free(1'b0),
 
-    .rd_A(rd),
-    .rs1_A(rs1),
-    .rs2_A(rs2),
+    .rd(rd),
+    .rs1(rs1),
+    .rs2(rs2),
 
-    .prd_A_old(prd_old),
-    .prd_A_new(prd_new),
-    .prs1_A(prs1),
-    .prs2_A(prs2)
+    .tag_old(prd_old),
+    .tag_new(prd_new),
+    .tag_rs1(prs1),
+    .tag_rs2(prs2)
 );
 
 initial begin

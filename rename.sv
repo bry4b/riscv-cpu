@@ -1,32 +1,34 @@
 module rename # (   // rename stage processing one instruction per cycle
     parameter NUM_REG = 32,
     parameter NUM_REG_LOG2 = $clog2(NUM_REG),
-    parameter NUM_P_REG = NUM_REG*2
+    parameter NUM_TAG = 64,
+    parameter NUM_TAG_LOG2 = $clos(NUM_TAG)
 ) (
     input clk,
     input rst,
     input stall_in,
 
-    input [NUM_REG_LOG2:0] prd_free,
-    input commit_free, // assert HIGH when instruction is committed to free up prd_free in free pool
+    input [NUM_REG_LOG2:0] tag_free,
+    input commit_free, // assert HIGH when instruction is committed to free up tag_free in free pool
 
-    input [NUM_REG_LOG2-1:0] rd_A,
-    input [NUM_REG_LOG2-1:0] rs1_A,
-    input [NUM_REG_LOG2-1:0] rs2_A,
+    input [NUM_REG_LOG2-1:0] rd,
+    input [NUM_REG_LOG2-1:0] rs1,
+    input [NUM_REG_LOG2-1:0] rs2,
 
-    output logic [NUM_REG_LOG2:0] prd_A_old,
-    output logic [NUM_REG_LOG2:0] prd_A_new,
-    output logic [NUM_REG_LOG2:0] prs1_A,
-    output logic [NUM_REG_LOG2:0] prs2_A
+    output logic [NUM_REG_LOG2:0] tag_old,
+    output logic [NUM_REG_LOG2:0] tag_new,
+    output logic [NUM_REG_LOG2:0] tag_rs1,
+    output logic [NUM_REG_LOG2:0] tag_rs2
 );
 
-logic [5:0] register_alias_table [0:NUM_REG-1];
+logic [NUM_TAG_LOG2-1:0] register_alias_table [0:NUM_REG-1];
 
 // 64-bit vector for free pool: 1 at index represent free register, 0 at index represents busy register
+logic [NUM_TAG_LOG2-1:0] tag_counter; 
 logic [NUM_P_REG-1:0] free_pool;                  
 
-logic [NUM_REG_LOG2:0] first_free_prd; // rd_A pulls from MS asserted bit of free pool
-logic [NUM_REG_LOG2:0] last_free_prd;
+logic [NUM_REG_LOG2:0] first_free_tag; // rd pulls from MS asserted bit of free pool
+logic [NUM_REG_LOG2:0] last_free_tag;
 logic encoder_valid;
 
 logic stall;
@@ -37,24 +39,24 @@ priority_encoder #(
     .TWO_SIDE(0)
 ) encoder (
     .in (free_pool),
-    .out_MSB (first_free_prd),
-    .out_LSB (last_free_prd),
+    .out_MSB (first_free_tag),
+    .out_LSB (last_free_tag),
     .valid (encoder_valid)
 );
 
 always_comb begin
     // assign new, old destination registers to go to ROB
-    if (rd_A != 1'b0) begin
-        prd_A_old = register_alias_table[rd_A];
-        prd_A_new = first_free_prd;
+    if (rd != 1'b0) begin
+        tag_old = register_alias_table[rd];
+        tag_new = first_free_tag;
     end else begin
-        prd_A_old = 1'b0;
-        prd_A_new = 1'b0;
+        tag_old = 1'b0;
+        tag_new = 1'b0;
     end
 
     // rename rs1
-    prs1_A = register_alias_table[rs1_A];
-    prs2_A = register_alias_table[rs2_A];
+    prs1 = register_alias_table[rs1];
+    prs2 = register_alias_table[rs2];
 end
 
 always @(posedge clk) begin
@@ -70,13 +72,13 @@ always @(posedge clk) begin
     end else if (~stall) begin
         // recover free register after commit
         if (commit_free) begin
-            free_pool[prd_free] <= 1'b1;
+            free_pool[tag_free] <= 1'b1;
         end
 
         // write to RAT
-        if (rd_A != 'd0) begin
-            register_alias_table[rd_A] <= first_free_prd;
-            free_pool[first_free_prd] <= 1'b0;
+        if (rd != 'd0) begin
+            register_alias_table[rd] <= first_free_tag;
+            free_pool[first_free_tag] <= 1'b0;
         end
         
         // assert that x0 == p0

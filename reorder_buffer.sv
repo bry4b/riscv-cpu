@@ -1,3 +1,5 @@
+//TODO: rewrite for new layout
+
 module reorder_buffer #(
     parameter ROB_SIZE = 16,
     parameter COMMIT_PORTS = 1
@@ -38,11 +40,10 @@ localparam ROB_SIZE_LOG2 = $clog2(ROB_SIZE);
 
 /*  
     reorder buffer layout:
-    [57:26] destination register data
-    [25:21] destination architectural register
-    [20:15] new destination physical register
-    [14:9]  old destination physical register
-    [8:1]   pc
+    [51:20] destination register value (32 bit)
+    [19:14] destination register tag (6 bit)
+    [13:9]  destination architectural register name (5 bit)
+    [8:1]   pc (8 bit)
     [0]     completed                               
 */
 logic [57:0] rob [0:ROB_SIZE-1];
