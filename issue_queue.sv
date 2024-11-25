@@ -7,10 +7,10 @@ module issue_queue #(
     input rst,
     input stall_in, 
 
-    // from ROB
+    // from ROB: retire up to one instruction per cycle
     input [ROB_SIZE_LOG2-1:0] rob_tail,     // reorder buffer tail
     input [REG_SIZE-1:0] data_rs_rob [0:1],
-    input valid_data_rs [0:1],
+    input ready_rs [0:1],
 
     // from rename
     input [4:0] op,                         // operation: 4-bit alu_sel + 1 bit for load/store
@@ -34,10 +34,13 @@ module issue_queue #(
     output logic [REG_SIZE-1:0] fu_rs1 [0:ISSUE_PORTS-1],       // rs1
     output logic [REG_SIZE-1:0] fu_rs2 [0:ISSUE_PORTS-1],       // rs2 or immediate
     output logic [NUM_TAGS_LOG2-1:0] fu_tags [0:ISSUE_PORTS-1], // rd tag
-    output logic [ROB_SIZE_LOG2-1:0] fu_rob [0:ISSUE_PORTS-1]   // rob index
+    output logic [ROB_SIZE_LOG2-1:0] fu_rob [0:ISSUE_PORTS-1],  // rob index
+     
+    output logic iq_stall
 );
 
 `include "constants.sv"
+localparam IQ_SIZE_LOG2 = $clog2(IQ_SIZE);
 
 /*
     reservation station data layout:
@@ -48,37 +51,62 @@ logic [REG_SIZE*2-1:0] iq_data [0:IQ_SIZE-1];
 
 /* 
     reservation station tags layout:
-    [28:27]     functional unit
-    [26:21]     ROB index
-    [20:15]     destination tag
-    [14:9]      src 1 tag
-    [8:3]       src 2 tag
-    [2]         immediate flag (1 if src2 holds immediate value)
+    [32:31]     functional unit
+    [30:25]     ROB index
+    [24:20]     micro-op
+    [19:14]     destination tag
+    [13:8]      src 1 tag
+    [7:2]       src 2 tag       // if src 2 tag is 0, src 2 data stores immediate value (or 0, if immediate is not used)
     [1]         src 1 ready
     [0]         src 2 ready
 */
-logic [28:0] iq_tags [0:IQ_SIZE-1]; 
+logic [32:0] iq_tags [0:IQ_SIZE-1]; 
+
+logic [IQ_SIZE_LOG2-1:0] iq_head;
+logic [IQ_SIZE_LOG2-1:0] iq_tail;
+logic iq_full;
+assign iq_full = (rob_head == rob_tail + 1'b1);
+assign iq_stall = stall_in | iq_full;
+
+logic [2:0] fu_ready;       // functional unit ready
 
 always_ff @(posedge clk) begin
     if (rst) begin
         for (int i = 0; i < IQ_SIZE; i = i + 1) begin
-            iq_data[i] = 64'b0;
-            iq_tags[i] = 29'b0;
+            iq_data[i] <= 64'b0;
+            iq_tags[i] <= 33'b0;
         end
+        iq_head <= 1'b0;
+        iq_tail <= 1'b0;
+        fu_ready <= 3'b0;
     end else begin
         if (in_valid) begin
-            // write new instruction tags to IQ
-            // probably use priority queue to find first available entry of IQ
+            // write new row to IQ
+            // FIFO implementation 
+            iq_tail <= iq_tail + 1'b1;
 
-            if (valid_data_rs[0]) begin
+            iq_tags[iq_head][32:31] <= 2'b0;        // TODO: ASSIGN FUNCTIONAL UNITS (ROUND-ROBIN? PRIORITY? ASSIGN WHEN ISSUE?)
+            iq_tags[iq_head][30:25] <= rob_tail;
+            iq_tags[iq_head][24:20] <= op;
+            iq_tags[iq_head][19:14] <= tag_rd;
+            iq_tags[iq_head][13:8]  <= tag_rs1;
+            iq_tags[iq_head][7:2]   <= tag_rs2;
+            iq_tags[iq_head][1:0]   <= ready_rs;
+
+            if (ready_rs[0]) begin
                 // write ROB data to src 1
+                iq_data[iq_head][63:32] <= data_rs_rob[0];
             end else begin
                 // write ARF data to src 1
+                iq_data[iq_head][63:32] <= data_rs1;
             end
-            if (valid_data_rs[1]) begin
+
+            if (ready_rs[1]) begin
                 // write ROB data to src 2
+                iq_data[iq_head][31:0] <= data_rs_rob[1];
             end else begin
                 // write ARF data to src 2
+                iq_data[iq_head][31:0] <= data_rs2;
             end
         end
     

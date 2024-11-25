@@ -1,3 +1,4 @@
+// ROB + register ready table
 module reorder_buffer #(
     parameter ROB_SIZE = 64,
     parameter RETIRE_PORTS = 1
@@ -13,18 +14,18 @@ module reorder_buffer #(
     input in_valid,
 
     // store destination register data if an instruction has completed
-    // can issue up to 3 instructions at a time, so we nee to be able to store 3 completed registers
+    // can issue up to 3 instructions at a time, so we need to be able to store 3 completed registers
     input [ROB_SIZE_LOG2-1:0] rob_index [0:2], 
     input [NUM_TAGS_LOG2-1:0] tag_rd_complete [0:2],
     input [REG_SIZE-1:0] data_rd [0:2],
     input complete [0:2],
 
-    // check if source register if ready during dispatch
+    // check if source register is ready during dispatch
     input [NUM_TAGS_LOG2-1:0] tag_rs [0:1],
 
     // output source register if ready
     output logic [REG_SIZE-1:0] data_rs [0:1],
-    output logic valid_data_rs [0:1],
+    output logic ready_rs [0:1],
     
     // retire instruction at rob_head if completed & update register file
     output logic [NUM_REG_LOG2-1:0] retire_reg,
@@ -79,7 +80,7 @@ always_ff @(posedge clk) begin
             rob[rob_tail][8:1]      <= pc;          // PC
             rob[rob_tail][13:9]     <= arch_rd;     // destination architectural rd
             rob[rob_tail][19:14]    <= tag_rd;      // destination register tag
-            rob[rob_tail][51:20]    <= 32'b0;       // data (nothing as of right now)
+            rob[rob_tail][51:20]    <= 32'b0;       // data (nothing yet, updates when instruction completes)
 
             ready_table[tag_rd]     <= 1'b0;
             rob_tail <= rob_tail + 1'b1;
@@ -108,7 +109,7 @@ always_comb begin
             for (int j = 0; j < ROB_SIZE; j = j + 1) begin
                 if (~breakout[i] && rob[j][19:14] == tag_rs[i]) begin
                     data_rs[i] = rob[j][51:20];
-                    valid_data_rs[i] = 1'b1;
+                    ready_rs[i] = 1'b1;
                     breakout[i] = 1'b1;
                 end
             end
