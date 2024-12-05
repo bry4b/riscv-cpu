@@ -2,7 +2,7 @@ module rename # (   // rename stage processing one instruction per cycle
     parameter NUM_REG = 32,
     parameter NUM_REG_LOG2 = $clog2(NUM_REG),
     parameter NUM_TAGS = 64,
-    parameter NUM_TAGS_LOG2 = $clog2(NUM_TAG)
+    parameter NUM_TAGS_LOG2 = $clog2(NUM_TAGS)
 ) (
     input clk,
     input rst,
@@ -17,7 +17,8 @@ module rename # (   // rename stage processing one instruction per cycle
 
     output logic [NUM_TAGS_LOG2-1:0] tag_rd,
     output logic [NUM_TAGS_LOG2-1:0] tag_rs1,
-    output logic [NUM_TAGS_LOG2-1:0] tag_rs2
+    output logic [NUM_TAGS_LOG2-1:0] tag_rs2,
+    output logic rename_ready
 );
 
 logic [NUM_TAGS_LOG2-1:0] rat [0:NUM_REG-1];
@@ -45,10 +46,12 @@ priority_encoder #(
 
 always_comb begin
     // assign new tag to destination register
-    if (~stall & rd != 1'b0) begin
-        tag_rd = first_free_tag;
+    if (~stall) begin
+        tag_rd = (rd != 1'b0) ? first_free_tag : 1'b0;
+        rename_ready = 1'b1;
     end else begin
         tag_rd = 1'b0;
+        rename_ready = 1'b0;
     end
 
     // rename rs1, rs2 to tags stored in RAT
@@ -64,7 +67,7 @@ always @(posedge clk) begin
             rat[i] <= NUM_REG_LOG2'(i);
         end
         for (i = 0; i < NUM_TAGS; i = i+1) begin
-            free_pool[i] = (i < NUM_REG) ? 1'b0 : 1'b1;
+            free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
         end
     end else if (~stall) begin
         // recover free tag after retire

@@ -58,7 +58,6 @@ rename UUT (
     .rs1(rs1),
     .rs2(rs2),
 
-    .tag_old(prd_old),
     .tag_new(prd_new),
     .tag_rs1(prs1),
     .tag_rs2(prs2)

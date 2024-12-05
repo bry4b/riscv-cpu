@@ -77,8 +77,6 @@ assign valid = valid_MSB && valid_LSB;
 
 endmodule
 
-
-
 module priority_encoder_MSB_4b (
     input [3:0] in,                 // 4b input 
     output logic [1:0] out,               // 2b output: index of MS asserted bit
@@ -96,13 +94,13 @@ endmodule
 module priority_encoder_LSB_4b (
     input [3:0] in,
     output logic [1:0] out,
-    output logic out_valid
+    output logic valid
 );
 always_comb begin
     if (in[0]) out = 2'b00;
     else if (in[1]) out = 2'b01;
     else if (in[2]) out = 2'b10;
     else out = 2'b11;
-    out_valid = in != 4'b0;
+    valid = in != 4'b0;
 end
 endmodule

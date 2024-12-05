@@ -24,10 +24,10 @@ always_comb begin
     rs2_data = arf[rs2];
 end
 
-always_ff @(posedge clk) begin
+always @(posedge clk) begin
     if (rst) begin
         for (int i = 0; i < NUM_REG; i = i + 1) begin
-            arf[i] = 32'b0;
+            arf[i] <= 32'b0;
         end    
     end else begin
         if (retire_valid & retire_reg != 1'b0) begin
@@ -43,3 +43,4 @@ initial begin
 end
 
 endmodule
+

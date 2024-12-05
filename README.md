@@ -4,3 +4,4 @@ Developed by Bryan Liu and Lara Smarandoiu for Prof. Nader's ECE M116C honors se
 
 RISC-V 3-issue out-of-order pipelined design supporting a small set of 32-bit R-type, I-type, and Memory instructions written in SystemVerilog. 
 
+https://luplab.gitlab.io/rvcodecjs/

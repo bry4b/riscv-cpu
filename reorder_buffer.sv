@@ -1,7 +1,12 @@
 // ROB + register ready table
 module reorder_buffer #(
+    parameter NUM_REG = 32,
+    parameter NUM_REG_LOG2 = $clog2(NUM_REG),
+    parameter NUM_TAGS = 64,
+    parameter NUM_TAGS_LOG2 = $clog2(NUM_TAGS),
+    parameter REG_SIZE = 32,
     parameter ROB_SIZE = 64,
-    parameter RETIRE_PORTS = 1
+    parameter ROB_SIZE_LOG2 = $clog2(ROB_SIZE)
 ) (
     input clk,
     input rst,
@@ -23,8 +28,11 @@ module reorder_buffer #(
     // check if source register is ready during dispatch
     input [NUM_TAGS_LOG2-1:0] tag_rs [0:1],
 
-    // output source register if ready
+    // output source register if completed but not retired
     output logic [REG_SIZE-1:0] data_rs [0:1],
+    output logic rob_contains_rs [0:1],
+
+    // output ready table for source register
     output logic ready_rs [0:1],
     
     // retire instruction at rob_head if completed & update register file
@@ -36,10 +44,6 @@ module reorder_buffer #(
     output logic [ROB_SIZE_LOG2-1:0] rob_tail,
     output logic rob_full
 );
-
-`include "constants.sv"
-
-localparam ROB_SIZE_LOG2 = $clog2(ROB_SIZE);
 
 /*  
     reorder buffer layout:
@@ -63,13 +67,13 @@ assign stall = stall_in | rob_full;     // stall if ROB is full
 logic breakout [0:1];                   // control break of source register output 
 
 // write to ROB
-always_ff @(posedge clk) begin
+always @(posedge clk) begin
     if (rst) begin
         rob_head <= 1'b0;
         rob_tail <= 1'b0;
-        ready_table <= 64'b0;
+        ready_table <= -64'd1;
         for (int i = 0; i < ROB_SIZE; i = i + 1) begin
-            rob[i] = 52'b0;
+            rob[i] <= 52'b0;
         end
     end else begin 
         rob_head <= rob_head_d;
@@ -82,7 +86,10 @@ always_ff @(posedge clk) begin
             rob[rob_tail][19:14]    <= tag_rd;      // destination register tag
             rob[rob_tail][51:20]    <= 32'b0;       // data (nothing yet, updates when instruction completes)
 
-            ready_table[tag_rd]     <= 1'b0;
+            if (tag_rd != 1'b0) begin
+                ready_table[tag_rd] <=1'b0;
+            end
+
             rob_tail <= rob_tail + 1'b1;
         end
     
@@ -94,7 +101,6 @@ always_ff @(posedge clk) begin
                 ready_table[tag_rd_complete[i]] <= 1'b1;
             end
         end
-        
         // TODO: change FU ready states
         // i think this should be done outside the ROB (the FUs themselves can output a bit to indicate if they are busy)
     end
@@ -102,6 +108,7 @@ end
 
 // if rs1 or rs2 being dispatched is ready, look in ROB for value, and set valid bit
 // reservation station: if valid bit, overwrite ARF value with ROB value
+// TODO: REFACTOR THIS SHIT BECAUSE THE DATAPATH IS UGLY AS FUCK
 always_comb begin
     for (int i = 0; i < 2; i = i + 1) begin
         breakout[i] = 1'b0;
@@ -109,20 +116,34 @@ always_comb begin
             for (int j = 0; j < ROB_SIZE; j = j + 1) begin
                 if (~breakout[i] && rob[j][19:14] == tag_rs[i]) begin
                     data_rs[i] = rob[j][51:20];
-                    ready_rs[i] = 1'b1;
+                    rob_contains_rs[i] = 1'b1;
                     breakout[i] = 1'b1;
+                end else begin
+                    data_rs[i] = 32'b0;
+                    rob_contains_rs[i] = 1'b0;
+                    breakout[i] = 1'b0;
                 end
             end
+        end else begin
+            data_rs[i] = 32'b0;
+            rob_contains_rs[i] = 1'b0;
         end
+    end
+end
+
+// output ready table
+always_comb begin
+    for (int i = 0; i < 2; i = i + 1) begin
+        ready_rs[i] = ready_table[tag_rs[i]];
     end
 end
 
 // TODO: retire when rob_head is completed
 // possibly done?
 always_comb begin
-    retire_reg = rob[rob_head][20:15];
+    retire_reg = rob[rob_head][13:9];
     retire_tag = rob[rob_head][19:14];
-    retire_reg_data = rob[rob_head][57:26];
+    retire_reg_data = rob[rob_head][51:20];
     if (rob[rob_head][0] == 1'b1) begin
         // retire data from instruction at head of ROB
         retire_valid = 1'b1;
@@ -137,7 +158,7 @@ end
 initial begin
     rob_head <= 1'b0;
     rob_tail <= 1'b0;
-    ready_table <= 64'b0;
+    ready_table <= -64'd1;
     for (int i = 0; i < ROB_SIZE; i = i + 1) begin
         rob[i] = 52'b0;
     end
