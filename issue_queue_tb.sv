@@ -57,7 +57,14 @@ logic [31:0] iq_fu_rs1 [0:2];
 logic [31:0] iq_fu_rs2 [0:2];
 logic [5:0] iq_fu_tags [0:2];
 logic [5:0] iq_fu_rob_index [0:2];
+logic iq_fu_valid [0:2];
 logic iq_stall;
+
+// FU outputs
+logic [31:0] cdb_data [0:2];
+logic [5:0] cdb_tags [0:2];
+logic [5:0] cdb_rob_index [0:2];
+logic cdb_valid [0:2];
 
 instr_fetch #(
     .SIZE(36),
@@ -169,23 +176,48 @@ issue_queue IQ (
     .data_rs2(rs2_data),
 
     // from common data bus
-    .cdb_tags(),
-    .cdb_data(),
-    .cdb_valid(),
+    .cdb_tags(cdb_tags),
+    .cdb_data(cdb_data),
+    .cdb_valid(cdb_valid),
     
-    // outputs
+    // outputs to feed into the FUs
     .fu_op(iq_fu_op),
     .fu_rs1(iq_fu_rs1),
     .fu_rs2(iq_fu_rs2),
     .fu_tags(iq_fu_tags),
     .fu_rob_index(iq_fu_rob_index),
+    .fu_valid(iq_fu_valid),
 
     .iq_stall(iq_stall)
 );
 
+genvar i;
+generate
+    for (i = 0; i < 3; i = i + 1) begin : genFUs
+        functional_unit FU (
+            .clk(clk),
+            .rst(rst),
+
+            .op(iq_fu_op[i]),
+            .rs1(iq_fu_rs1[i]),
+            .rs2(iq_fu_rs2[i]),
+            .tags_in(iq_fu_tags[i]),
+            .rob_index_in(iq_fu_rob_index[i]),
+            .valid_in(iq_fu_valid[i]),
+
+            // outputs
+            .rd(cdb_data[i]),
+            .tags_out(cdb_tags[i]),
+            .rob_index_out(cdb_rob_index[i]),
+            .valid_out(cdb_valid[i])
+        );
+    end
+endgenerate
+
 initial begin
     clk = 0;
-    rst = 1;
+    rst = 0;
+    #10 rst = 1;
     #10 rst = 0;
     program_count = 8'd0;
     // #10 assert (instruction == 32'h00600113);
@@ -194,7 +226,7 @@ initial begin
 end
 
 always begin
-    #10 clk = ~clk;
+    #5 clk = ~clk;
 end
 
 always @(posedge clk) begin
