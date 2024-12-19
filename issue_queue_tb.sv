@@ -18,6 +18,8 @@ logic [4:0] rs2;
 logic [31:0] imm;
 logic [7:0] ctrls;
 logic [3:0] alu_sel;
+logic [6:0] opcode;
+logic [2:0] funct3;
 logic decode_valid;
 
 // rename
@@ -25,6 +27,7 @@ logic [5:0] tag_rd;
 logic [5:0] tag_rs1;
 logic [5:0] tag_rs2;
 logic rename_ready;
+logic load_store;
 
 // regfile 
 logic [31:0] rs1_data;
@@ -44,10 +47,10 @@ assign rob_tag_rs[0] = tag_rs1;
 logic [31:0] rob_data_rs [0:1];
 logic rob_contains_rs [0:1];
 logic rob_ready_rs [0:1];
-logic [4:0] rob_retire_reg;
-logic [5:0] rob_retire_tag;
-logic [31:0] rob_retire_reg_data;
-logic rob_retire_valid;
+logic [4:0] rob_retire_reg [0:1];
+logic [5:0] rob_retire_tag [0:1];
+logic [31:0] rob_retire_reg_data [0:1];
+logic [1:0] rob_retire_valid;
 logic [5:0] rob_tail;
 logic rob_full;
 
@@ -65,6 +68,11 @@ logic [31:0] cdb_data [0:2];
 logic [5:0] cdb_tags [0:2];
 logic [5:0] cdb_rob_index [0:2];
 logic cdb_valid [0:2];
+
+// LSU load outputs
+logic [5:0] load_rob_index;
+logic [31:0] load_data_rd;
+logic load_complete;
 
 instr_fetch #(
     .SIZE(36),
@@ -84,7 +92,9 @@ decode DE (
     .imm(imm),
     .ctrls(ctrls),
     .alu_sel(alu_sel),
-    .valid(decode_valid)
+    .valid(decode_valid),
+    .opcode(opcode),
+    .funct3(funct3)
 );
 
 rename RE (
@@ -92,9 +102,10 @@ rename RE (
     .rst(rst),
     .stall_in(~decode_valid),
 
-    .retire_tag(1'b0),      // not retiring right now
-    .retire_valid(1'b0),    // not retiring right now
+    .retire_tag(rob_retire_tag),
+    .retire_valid(rob_retire_valid), 
 
+    .opcode(opcode),
     .rd(rd),
     .rs1(rs1),
     .rs2(rs2),
@@ -103,7 +114,8 @@ rename RE (
     .tag_rd(tag_rd),
     .tag_rs1(tag_rs1),
     .tag_rs2(tag_rs2),
-    .rename_ready(rename_ready)
+    .rename_ready(rename_ready),
+    .load_store(load_store)
 );
 
 arch_reg_file ARF (
@@ -131,10 +143,14 @@ reorder_buffer ROB (
     .tag_rd(tag_rd),
     .in_valid(rename_ready),
 
-    .rob_index(rob_index),
-    .tag_rd_complete(tag_rd_complete),
-    .data_rd(rob_data_rd),
-    .complete(rob_complete),
+    .rob_index(cdb_rob_index),
+    .tag_rd_complete(cdb_tags),
+    .data_rd(cdb_data),
+    .complete(cdb_valid),
+
+    .load_rob_index(load_rob_index),
+    .load_data_rd(load_data_rd),
+    .load_complete(load_complete),
     
     .tag_rs(rob_tag_rs),
     
@@ -170,6 +186,7 @@ issue_queue IQ (
     .tag_rs2(tag_rs2),
     .imm(imm),
     .in_valid(rename_ready),
+    .load_store(load_store),
 
     // from ARF
     .data_rs1(rs1_data),
@@ -189,6 +206,34 @@ issue_queue IQ (
     .fu_valid(iq_fu_valid),
 
     .iq_stall(iq_stall)
+);
+
+loadstore_queue LSQ (
+    .clk(clk), 
+    .rst(rst), 
+    .stall_in(1'b0),
+
+    .opcode(opcode),
+    .funct3(funct3),
+    .tag_rd(tag_rd),
+    .tag_rs2(tag_rs2),
+    .in_valid(load_store),
+    
+    .rob_tail(rob_tail),
+    .rob_rs2_data(rob_data_rs[1]),
+    .rob_contains_rs2(rob_contains_rs[1]),
+    .rob_ready_rs2(rob_ready_rs[1]),
+    .arf_rs2_data(rs2_data),
+
+    .cdb_tags(cdb_tags),
+    .cdb_data(cdb_data),
+    .cdb_rob_index(cdb_rob_index),
+    .cdb_valid(cdb_valid),
+    
+    //outputs
+    .load_rd(load_data_rd),
+    .load_rob_index(load_rob_index),
+    .load_ready(load_complete)
 );
 
 genvar i;

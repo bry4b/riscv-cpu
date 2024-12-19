@@ -18,15 +18,25 @@ module reorder_buffer #(
     input [NUM_TAGS_LOG2-1:0] tag_rd,
     input in_valid,
 
-    // store destination register data if an instruction has completed
+    // if an instruction has completed, store destination register data
     // can issue up to 3 instructions at a time, so we need to be able to store 3 completed registers
     input [ROB_SIZE_LOG2-1:0] rob_index [0:2], 
     input [NUM_TAGS_LOG2-1:0] tag_rd_complete [0:2],
     input [REG_SIZE-1:0] data_rd [0:2],
     input complete [0:2],
 
+    // load instruction completion -> store data from memory (thru LSU) in ROB 
+    input [ROB_SIZE_LOG2-1:0] load_rob_index,
+    input [REG_SIZE-1:0] load_data_rd,
+    input load_complete,
+
     // check if source register is ready during dispatch
     input [NUM_TAGS_LOG2-1:0] tag_rs [0:1],
+
+    // // load/store asks ROB for data from specific tag
+    // input [NUM_TAGS_LOG2-1:0] loadstore_rs2_tag,
+    // output logic loadstore_rs2_contains, // output if the ROB contains the data for the tag
+    // output logic [REG_SIZE-1:0] loadstore_rs2_data, // output load/store data if in ROB
 
     // output source register if completed but not retired
     output logic [REG_SIZE-1:0] data_rs [0:1],
@@ -36,10 +46,10 @@ module reorder_buffer #(
     output logic ready_rs [0:1],
     
     // retire instruction at rob_head if completed & update register file
-    output logic [NUM_REG_LOG2-1:0] retire_reg,
-    output logic [NUM_TAGS_LOG2-1:0] retire_tag,
-    output logic [REG_SIZE-1:0] retire_reg_data,
-    output logic retire_valid, 
+    output logic [NUM_REG_LOG2-1:0] retire_reg [0:1],
+    output logic [NUM_TAGS_LOG2-1:0] retire_tag [0:1],
+    output logic [REG_SIZE-1:0] retire_reg_data [0:1],
+    output logic [1:0] retire_valid, 
 
     output logic [ROB_SIZE_LOG2-1:0] rob_tail,
     output logic rob_full
@@ -78,8 +88,8 @@ always @(posedge clk) begin
     end else begin 
         rob_head <= rob_head_d;
 
+        // push new entry to ROB
         if (~stall & in_valid) begin
-            // push new entry to ROB
             rob[rob_tail][0]        <= 1'b0;        // completed bit
             rob[rob_tail][8:1]      <= pc;          // PC
             rob[rob_tail][13:9]     <= arch_rd;     // destination architectural rd
@@ -101,6 +111,21 @@ always @(posedge clk) begin
                 ready_table[tag_rd_complete[i]] <= 1'b1;
             end
         end
+
+        if (load_complete) begin
+            rob[load_rob_index][0] <= 1'b1;
+            rob[load_rob_index][51:20] <= load_data_rd;
+            ready_table[rob[load_rob_index][19:14]] <= 1'b1;
+        end
+
+        // clear ROB rows if they're retired
+        if (retire_valid[0]) begin
+            rob[rob_head] <= 1'b0;        
+        end
+        if (retire_valid[1]) begin
+            rob[rob_head + 1'b1] <= 1'b0;
+        end
+
         // TODO: change FU ready states
         // i think this should be done outside the ROB (the FUs themselves can output a bit to indicate if they are busy)
     end
@@ -108,7 +133,7 @@ end
 
 // if rs1 or rs2 being dispatched is ready, look in ROB for value, and set valid bit
 // reservation station: if valid bit, overwrite ARF value with ROB value
-// TODO: REFACTOR THIS SHIT BECAUSE THE DATAPATH IS UGLY AS FUCK
+// TODO: REFACTOR THIS SHIT BECAUSE THE DATAPATH IS UGLY AS FUCK or just dont care about it haha im lazy
 always_comb begin
     for (int i = 0; i < 2; i = i + 1) begin
         breakout[i] = 1'b0;
@@ -138,19 +163,28 @@ always_comb begin
     end
 end
 
-// TODO: retire when rob_head is completed
-// possibly done?
+// retire head instruction when it has been completed
 always_comb begin
-    retire_reg = rob[rob_head][13:9];
-    retire_tag = rob[rob_head][19:14];
-    retire_reg_data = rob[rob_head][51:20];
-    if (rob[rob_head][0] == 1'b1) begin
-        // retire data from instruction at head of ROB
-        retire_valid = 1'b1;
-        rob_head_d = rob_head + 1'b1;
-    end else begin
-        // no instruction to retire
-        retire_valid = 1'b0;
+    retire_reg[0] = rob[rob_head][13:9];
+    retire_tag[0] = rob[rob_head][19:14];
+    retire_reg_data[0] = rob[rob_head][51:20];
+
+    retire_reg[1] = rob[rob_head+1'b1][13:9];
+    retire_tag[1] = rob[rob_head+1'b1][19:14];
+    retire_reg_data[1] = rob[rob_head+1'b1][51:20];
+    
+    if (rob[rob_head][0] == 1'b1) begin             // retire data from instruction at head of ROB
+        retire_valid[0] = 1'b1;
+        if (rob[rob_head+1'b1][0] == 1'b1) begin    // retire data from instruction at head+1 of ROB
+            retire_valid[1] = 1'b1;
+            rob_head_d = rob_head + 2'd2;        
+        end else begin    
+            retire_valid[1] = 1'b0;                  // only the head of ROB is retire-able
+            rob_head_d = rob_head + 1'b1;
+        end
+    
+    end else begin                                  // no instructions to retire
+        retire_valid = 2'b0;
         rob_head_d = rob_head;
     end
 end

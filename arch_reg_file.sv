@@ -9,12 +9,13 @@ module arch_reg_file #(
     input [NUM_REG_LOG2-1:0] rs1,
     input [NUM_REG_LOG2-1:0] rs2,
     
-    input [NUM_REG_LOG2-1:0] retire_reg,
-    input [REG_SIZE-1:0] retire_reg_data,
-    input retire_valid, 
+    input [NUM_REG_LOG2-1:0] retire_reg [0:1],
+    input [REG_SIZE-1:0] retire_reg_data [0:1],
+    input [1:0] retire_valid, 
 
     output logic [REG_SIZE-1:0] rs1_data,
     output logic [REG_SIZE-1:0] rs2_data
+
 );
 
 logic [REG_SIZE-1:0] arf [0:NUM_REG-1];
@@ -30,8 +31,11 @@ always @(posedge clk) begin
             arf[i] <= 32'b0;
         end    
     end else begin
-        if (retire_valid & retire_reg != 1'b0) begin
-            arf[retire_reg] <= retire_reg_data;
+        if (retire_valid[0] & (retire_reg[0] != 1'b0)) begin
+            arf[retire_reg[0]] <= retire_reg_data[0];
+        end
+        if (retire_valid[1] & (retire_reg[1] != 1'b0)) begin
+            arf[retire_reg[1]] <= retire_reg_data[1];
         end
     end
 end

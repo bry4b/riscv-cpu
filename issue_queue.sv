@@ -25,6 +25,7 @@ module issue_queue #(
     input [NUM_TAGS_LOG2-1:0] tag_rs2,      // source register 2
     input [31:0] imm,                       // immediate
     input in_valid,                         // instruction valid
+    input load_store,                       // load/store instruction
 
     // from ARF
     input [REG_SIZE-1:0] data_rs1,          // source register 1 data from ARF
@@ -78,36 +79,36 @@ logic [3:0] iq_ready [0:IQ_SIZE-1];
 always_comb begin
     for (int i = 0; i < IQ_SIZE; i = i + 1) begin
         if (iq_tags[i][1] != 1'b1) begin // rs1 is not ready, check CDB for forwarding
-            if (cdb_tags[0] == iq_tags[i][7:2]) begin
-                iq_ready[i][1:0] = 2'b00;
-
-            end else if (cdb_tags[1] == iq_tags[i][7:2]) begin
-                iq_ready[i][1:0] = 2'b01;
-            
-            end else if (cdb_tags[2] == iq_tags[i][7:2]) begin
-                iq_ready[i][1:0] = 2'b10;
-            end else begin
-                iq_ready[i][1:0] = 2'b11;       // not in CDB
-            end
-        end else begin
-            iq_ready[i][1:0] = 2'b11;       // already ready
-        end
-
-        if (iq_tags[i][0] != 1'b1) begin // rs2 is not ready, check CDB for forwarding
-            if (cdb_tags[0] == iq_tags[i][7:2]) begin
+            if (cdb_valid[0] && cdb_tags[0] == iq_tags[i][13:8]) begin
                 iq_ready[i][3:2] = 2'b00;
-            
-            end else if (cdb_tags[1] == iq_tags[i][7:2]) begin
+
+            end else if (cdb_valid[1] && cdb_tags[1] == iq_tags[i][13:8]) begin
                 iq_ready[i][3:2] = 2'b01;
             
-            end else if (cdb_tags[2] == iq_tags[i][7:2]) begin
+            end else if (cdb_valid[2] && cdb_tags[2] == iq_tags[i][13:8]) begin
                 iq_ready[i][3:2] = 2'b10;
-            
             end else begin
                 iq_ready[i][3:2] = 2'b11;       // not in CDB
             end
         end else begin
             iq_ready[i][3:2] = 2'b11;       // already ready
+        end
+
+        if (iq_tags[i][0] != 1'b1) begin // rs2 is not ready, check CDB for forwarding
+            if (cdb_valid[0] && cdb_tags[0] == iq_tags[i][7:2]) begin
+                iq_ready[i][1:0] = 2'b00;
+            
+            end else if (cdb_valid[1] && cdb_tags[1] == iq_tags[i][7:2]) begin
+                iq_ready[i][1:0] = 2'b01;
+            
+            end else if (cdb_valid[2] && cdb_tags[2] == iq_tags[i][7:2]) begin
+                iq_ready[i][1:0] = 2'b10;
+            
+            end else begin
+                iq_ready[i][1:0] = 2'b11;       // not in CDB
+            end
+        end else begin
+            iq_ready[i][1:0] = 2'b11;       // already ready
         end
     end
 end
@@ -135,15 +136,33 @@ always @(posedge clk) begin
             // FIFO implementation 
             iq_tail <= iq_tail + 1'b1;
 
-            iq_tags[iq_tail][31:30] <= 2'b0;        // TODO: ASSIGN FUNCTIONAL UNITS (ROUND-ROBIN? PRIORITY? ASSIGN WHEN ISSUE?)
+            iq_tags[iq_tail][31:30] <= 2'b0;
             iq_tags[iq_tail][29:24] <= rob_tail;
             iq_tags[iq_tail][23:20] <= op;
-            iq_tags[iq_tail][19:14] <= tag_rd;
+            if (~load_store) begin
+                iq_tags[iq_tail][19:14] <= tag_rd;
+            end else begin // if load or store instruction, don't want to actually commit/retire this computation
+                iq_tags[iq_tail][19:14] <= 5'b0;
+            end
             iq_tags[iq_tail][13:8]  <= tag_rs1;
             iq_tags[iq_tail][7:2]   <= tag_rs2;
-            iq_tags[iq_tail][1:0]   <= {rob_ready_rs[1], rob_ready_rs[0]};
 
-            if (rob_ready_rs[0]) begin
+
+            // look for rs1, rs2 data from CDB -> ROB -> ARF
+            if (tag_rs1 == cdb_tags[0]) begin
+                iq_tags[iq_tail][1] <= 1'b1;            // rs1 is ready
+                iq_data[iq_tail][63:32] <= cdb_data[0]; // load CDB data into src 1 data
+
+            end else if (tag_rs1 == cdb_tags[1]) begin
+                iq_tags[iq_tail][1] <= 1'b1;
+                iq_data[iq_tail][63:32] <= cdb_data[1];
+
+            end else if (tag_rs1 == cdb_tags[2]) begin
+                iq_tags[iq_tail][1] <= 1'b1;
+                iq_data[iq_tail][63:32] <= cdb_data[2];
+
+            end else if (rob_ready_rs[0]) begin
+                iq_tags[iq_tail][1] <= 1'b1;
                 if (rob_contains_rs[0]) begin
                     // write ROB data to src 1
                     iq_data[iq_tail][63:32] <= rob_data_rs[0];
@@ -151,12 +170,29 @@ always @(posedge clk) begin
                     // write ARF data to src 1
                     iq_data[iq_tail][63:32] <= data_rs1;
                 end
+            end else begin
+                iq_tags[iq_tail][1] <= 1'b0;
             end
 
-            if (tag_rs2 == 1'b0) begin
-                // load immediate into src 2 data
-                iq_data[iq_tail][31:0] <= imm;
+            // load values for rs2 from CDB/ROB/ARF
+            if (tag_rs2 == 1'b0 || load_store) begin    // if load/store ignore rs2
+                iq_tags[iq_tail][0] <= 1'b1;
+                iq_data[iq_tail][31:0] <= imm;          // load immediate into src 2 data
+
+            end else if (tag_rs2 == cdb_tags[0]) begin
+                iq_tags[iq_tail][0] <= 1'b1;
+                iq_data[iq_tail][31:0] <= cdb_data[0];  // load CDB data into src 2 data
+
+            end else if (tag_rs2 == cdb_tags[1]) begin
+                iq_tags[iq_tail][0] <= 1'b1;
+                iq_data[iq_tail][31:0] <= cdb_data[1];
+
+            end else if (tag_rs2 == cdb_tags[2]) begin
+                iq_tags[iq_tail][0] <= 1'b1;
+                iq_data[iq_tail][31:0] <= cdb_data[2];
+
             end else if (rob_ready_rs[1]) begin
+                iq_tags[iq_tail][0] <= 1'b1;
                 if (rob_contains_rs[1]) begin
                     // write ROB data to src 2
                     iq_data[iq_tail][31:0] <= rob_data_rs[1];
@@ -164,63 +200,82 @@ always @(posedge clk) begin
                     // write ARF data to src 2
                     iq_data[iq_tail][31:0] <= data_rs2;
                 end
+            end else begin
+                iq_tags[iq_tail][0] <= 1'b0;
             end
+        end
 
-            // issue logic
-            if (fu_ready != 3'b000) begin // at least one FU is ready, so can attempt to issue
-                
-                for (int i = 0; i < 64; i = i + 1) begin
-                    if ((iq_tags[i+iq_head][1] || iq_ready[i+iq_head][3:2] != 2'b11)
-                        && (iq_tags[i+iq_head][0] || iq_ready[i+iq_head][1:0] != 2'b11)) begin // instruction is ready to be issued
+        // input CDB data into IQ
+        for (int i = 0; i < IQ_SIZE; i = i + 1) begin
+            if (iq_ready[i][3:2] != 2'b11) begin
+                iq_tags[i][1] <= 1'b1; // rs1 is ready
+                iq_data[i][63:32] <= cdb_data[iq_ready[i][3:2]];
+            end
+            if (iq_ready[i][1:0] != 2'b11) begin
+                iq_tags[i][0] <= 1'b1; // rs2 is ready
+                iq_data[i][31:0] <= cdb_data[iq_ready[i][1:0]];
+            end
+        end
 
-                        if (fu_ready[0] == 1'b1) begin 
-                            fu_ready[0] = 1'b0;
-                            
-                            fu_op[0] <= iq_tags[i+iq_head][23:20]; // op type
-                            fu_rs1[0] <= (iq_tags[i+iq_head][1]) ? (iq_data[i+iq_head][63:32]) : (cdb_data[iq_ready[i+iq_head][3:2]]);
-                            fu_rs2[0] <= (iq_tags[i+iq_head][0]) ? (iq_data[i+iq_head][31:0]) : (cdb_data[iq_ready[i+iq_head][1:0]]);
-                            fu_tags[0] <= iq_tags[i+iq_head][19:14];
-                            fu_rob_index[0] <= iq_tags[i+iq_head][29:24];
+        // issue logic
+        if (fu_ready != 3'b000) begin // at least one FU is ready, so can attempt to issue
+            
+            for (int i = 0; i < 64; i = i + 1) begin
+                if ((iq_tags[i+iq_head][1] || iq_ready[i+iq_head][3:2] != 2'b11)
+                    && (iq_tags[i+iq_head][0] || iq_ready[i+iq_head][1:0] != 2'b11)) begin // instruction is ready to be issued
 
-                            iq_data[i+iq_head] <= 64'b0;
-                            iq_tags[i+iq_head] <= 32'b0;
+                    if (fu_ready[0] == 1'b1) begin 
+                        fu_ready[0] = 1'b0;
+                        
+                        fu_op[0] <= iq_tags[i+iq_head][23:20]; // op type
+                        fu_rs1[0] <= (iq_tags[i+iq_head][1]) ? (iq_data[i+iq_head][63:32]) : (cdb_data[iq_ready[i+iq_head][3:2]]);
+                        fu_rs2[0] <= (iq_tags[i+iq_head][0]) ? (iq_data[i+iq_head][31:0]) : (cdb_data[iq_ready[i+iq_head][1:0]]);
+                        fu_tags[0] <= iq_tags[i+iq_head][19:14];
+                        fu_rob_index[0] <= iq_tags[i+iq_head][29:24];
 
-                        end else if (fu_ready[1] == 1'b1) begin
-                            fu_ready[1] = 1'b0;
+                        iq_data[i+iq_head] <= 64'b0;
+                        iq_tags[i+iq_head] <= 32'b0;
+                        iq_head = iq_head + 1'b1;
 
-                            fu_op[1] <= iq_tags[i+iq_head][23:20]; // op type
-                            fu_rs1[1] <= (iq_tags[i+iq_head][1]) ? (iq_data[i+iq_head][63:32]) : (cdb_data[iq_ready[i+iq_head][3:2]]);
-                            fu_rs2[1] <= (iq_tags[i+iq_head][0]) ? (iq_data[i+iq_head][31:0]) : (cdb_data[iq_ready[i+iq_head][1:0]]);
-                            fu_tags[1] <= iq_tags[i+iq_head][19:14];
-                            fu_rob_index[1] <= iq_tags[i+iq_head][29:24];
+                    end else if (fu_ready[1] == 1'b1) begin
+                        fu_ready[1] = 1'b0;
 
-                            iq_data[i+iq_head] <= 64'b0;
-                            iq_tags[i+iq_head] <= 32'b0;
-                            
-                        end else if (fu_ready[2] == 1'b1) begin
-                            fu_ready[2] = 1'b0;
+                        fu_op[1] <= iq_tags[i+iq_head][23:20]; // op type
+                        fu_rs1[1] <= (iq_tags[i+iq_head][1]) ? (iq_data[i+iq_head][63:32]) : (cdb_data[iq_ready[i+iq_head][3:2]]); 
+                        fu_rs2[1] <= (iq_tags[i+iq_head][0]) ? (iq_data[i+iq_head][31:0]) : (cdb_data[iq_ready[i+iq_head][1:0]]);
+                        fu_tags[1] <= iq_tags[i+iq_head][19:14];
+                        fu_rob_index[1] <= iq_tags[i+iq_head][29:24];
 
-                            fu_op[2] <= iq_tags[i+iq_head][23:20]; // op type
-                            fu_rs1[2] <= (iq_tags[i+iq_head][1]) ? (iq_data[i+iq_head][63:32]) : (cdb_data[iq_ready[i+iq_head][3:2]]);
-                            fu_rs2[2] <= (iq_tags[i+iq_head][0]) ? (iq_data[i+iq_head][31:0]) : (cdb_data[iq_ready[i+iq_head][1:0]]);
-                            fu_tags[2] <= iq_tags[i+iq_head][19:14];
-                            fu_rob_index[2] <= iq_tags[i+iq_head][29:24];
+                        iq_data[i+iq_head] <= 64'b0;
+                        iq_tags[i+iq_head] <= 32'b0;
+                        iq_head = iq_head + 1'b1;
 
-                            iq_data[i+iq_head] <= 64'b0;
-                            iq_tags[i+iq_head] <= 32'b0;
+                        
+                    end else if (fu_ready[2] == 1'b1) begin
+                        fu_ready[2] = 1'b0;
 
-                        end 
-                    end
+                        fu_op[2] <= iq_tags[i+iq_head][23:20]; // op type
+                        fu_rs1[2] <= (iq_tags[i+iq_head][1]) ? (iq_data[i+iq_head][63:32]) : (cdb_data[iq_ready[i+iq_head][3:2]]);
+                        fu_rs2[2] <= (iq_tags[i+iq_head][0]) ? (iq_data[i+iq_head][31:0]) : (cdb_data[iq_ready[i+iq_head][1:0]]);
+                        fu_tags[2] <= iq_tags[i+iq_head][19:14];
+                        fu_rob_index[2] <= iq_tags[i+iq_head][29:24];
+
+                        iq_data[i+iq_head] <= 64'b0;
+                        iq_tags[i+iq_head] <= 32'b0;
+                        iq_head = iq_head + 1'b1;
+
+                    end 
                 end
             end
-
-            fu_valid[0] <= ~fu_ready[0];
-            fu_valid[1] <= ~fu_ready[1];
-            fu_valid[2] <= ~fu_ready[2];
-
         end
+
+    fu_valid[0] <= ~fu_ready[0];
+    fu_valid[1] <= ~fu_ready[1];
+    fu_valid[2] <= ~fu_ready[2];
+
     end
 end
+
 
 // // issue logic
 // always_comb begin

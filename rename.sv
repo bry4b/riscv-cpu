@@ -8,9 +8,10 @@ module rename # (   // rename stage processing one instruction per cycle
     input rst,
     input stall_in,
 
-    input [NUM_TAGS_LOG2-1:0] retire_tag,
-    input retire_valid, // assert HIGH when instruction is retired to free up tag_free in free pool
+    input [NUM_TAGS_LOG2-1:0] retire_tag [0:1],
+    input [1:0] retire_valid, // assert HIGH when instruction is retired to free up tag_free in free pool
 
+    input [6:0] opcode, 
     input [NUM_REG_LOG2-1:0] rd,
     input [NUM_REG_LOG2-1:0] rs1,
     input [NUM_REG_LOG2-1:0] rs2,
@@ -18,7 +19,10 @@ module rename # (   // rename stage processing one instruction per cycle
     output logic [NUM_TAGS_LOG2-1:0] tag_rd,
     output logic [NUM_TAGS_LOG2-1:0] tag_rs1,
     output logic [NUM_TAGS_LOG2-1:0] tag_rs2,
-    output logic rename_ready
+    output logic rename_ready,
+    
+    // load/store stuff
+    output logic load_store     // if this is 1 then instruction goes to load/store unit instead of issue queue
 );
 
 logic [NUM_TAGS_LOG2-1:0] rat [0:NUM_REG-1];
@@ -33,6 +37,8 @@ logic encoder_valid;
 
 logic stall;
 assign stall = ~encoder_valid | stall_in;
+
+assign load_store = (opcode == 7'b0000011 || opcode == 7'b0100011) & rename_ready;
 
 priority_encoder #(
     .WIDTH(NUM_TAGS),
@@ -60,8 +66,7 @@ always_comb begin
 end
 
 always @(posedge clk) begin
-    if (rst) begin
-        // initialize RAT and free pool
+    if (rst) begin // initialize RAT and free pool
         int i;
         for (i = 0; i < NUM_REG; i = i+1) begin
             rat[i] <= NUM_REG_LOG2'(i);
@@ -69,13 +74,16 @@ always @(posedge clk) begin
         for (i = 0; i < NUM_TAGS; i = i+1) begin
             free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
         end
+    
     end else if (~stall) begin
         // recover free tag after retire
-        if (retire_valid) begin
-            free_pool[retire_tag] <= 1'b1;
+        for (int i = 0; i < 2; i++) begin
+            if (retire_valid[i] && retire_tag[i] != 1'b0) begin
+                free_pool[retire_tag[i]] <= 1'b1;
+            end
         end
 
-        // write newly assigned tag to RAT
+        // write newly assigned tag to RAT. store has rd = 0 so this good!!!
         if (rd != 1'b0) begin
             rat[rd] <= first_free_tag;
             free_pool[first_free_tag] <= 1'b0;

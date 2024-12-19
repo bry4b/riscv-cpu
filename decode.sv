@@ -10,14 +10,16 @@ module decode #(
     output logic [31:0] imm,
     output logic [7:0]  ctrls,      // [7] regwrite, [6] alusrc, [5] memtoreg, [4] memre, [3] memwr, [2] byteword, [1:0] aluop
     output logic [3:0]  alu_sel,
+    output logic [6:0]  opcode,
+    output logic [2:0]  funct3,
 
     output logic valid
 );
 
 // `include "constants.sv"
 
-logic [6:0] opcode;
-logic [2:0] funct3;
+// logic [6:0] opcode;
+// logic [2:0] funct3;
 logic [6:0] funct7;
 
 assign opcode = instr[6:0];
@@ -87,7 +89,7 @@ always_comb begin
             valid = 1'b1;
         end
 
-        7'b0100011: begin // Store
+        7'b0100011: begin // store (SW, SB)
             rd      = 5'd0;
             funct3  = instr[14:12];
             rs1     = instr[19:15];
@@ -101,7 +103,7 @@ always_comb begin
             ctrls[4]    = 1'b0;
             ctrls[3]    = 1'b1;
             ctrls[2]    = (funct3 == 3'b000) ? 1'b0 : 1'b1;
-            ctrls[1:0]  = 2'b10;
+            ctrls[1:0]  = 2'b00;
 
             valid = 1'b1;
         end
