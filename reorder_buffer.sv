@@ -106,8 +106,8 @@ always @(posedge clk) begin
         // complete, update register value in ROB
         for (int i = 0; i < 3; i = i + 1) begin
             if (complete[i]) begin
-                rob[rob_index[i]][0] <= 1'b1;           // set completed
-                rob[rob_index[i]][51:20] <= data_rd[i]; // store register data
+                rob[rob_index[i]][0] <= 1'b1;               // set completed
+                rob[rob_index[i]][51:20] <= data_rd[i];     // store register data
                 ready_table[tag_rd_complete[i]] <= 1'b1;
             end
         end
@@ -136,17 +136,15 @@ end
 // TODO: REFACTOR THIS SHIT BECAUSE THE DATAPATH IS UGLY AS FUCK or just dont care about it haha im lazy
 always_comb begin
     for (int i = 0; i < 2; i = i + 1) begin
-        breakout[i] = 1'b0;
         if (ready_table[tag_rs[i]]) begin
             for (int j = 0; j < ROB_SIZE; j = j + 1) begin
-                if (~breakout[i] && rob[j][19:14] == tag_rs[i]) begin
+                if (rob[j][19:14] == tag_rs[i]) begin
                     data_rs[i] = rob[j][51:20];
                     rob_contains_rs[i] = 1'b1;
-                    breakout[i] = 1'b1;
+                    break;
                 end else begin
                     data_rs[i] = 32'b0;
                     rob_contains_rs[i] = 1'b0;
-                    breakout[i] = 1'b0;
                 end
             end
         end else begin

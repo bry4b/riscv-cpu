@@ -9,6 +9,7 @@ module rename # (   // rename stage processing one instruction per cycle
     input stall_in,
 
     input [NUM_TAGS_LOG2-1:0] retire_tag [0:1],
+    input [NUM_REG_LOG2-1:0] retire_reg [0:1],
     input [1:0] retire_valid, // assert HIGH when instruction is retired to free up tag_free in free pool
 
     input [6:0] opcode, 
@@ -26,6 +27,7 @@ module rename # (   // rename stage processing one instruction per cycle
 );
 
 logic [NUM_TAGS_LOG2-1:0] rat [0:NUM_REG-1];
+logic [NUM_TAGS_LOG2-1:0] rat_old [0:NUM_REG-1]; 
 
 // 64-bit vector for free pool: 1 at index represent free register, 0 at index represents busy register
 logic [NUM_TAGS_LOG2-1:0] tag_counter; 
@@ -70,6 +72,7 @@ always @(posedge clk) begin
         int i;
         for (i = 0; i < NUM_REG; i = i+1) begin
             rat[i] <= NUM_REG_LOG2'(i);
+            rat_old[i] <= NUM_REG_LOG2'(i);
         end
         for (i = 0; i < NUM_TAGS; i = i+1) begin
             free_pool[i] <= (i < NUM_REG) ? 1'b0 : 1'b1;
@@ -79,12 +82,13 @@ always @(posedge clk) begin
         // recover free tag after retire
         for (int i = 0; i < 2; i++) begin
             if (retire_valid[i] && retire_tag[i] != 1'b0) begin
-                free_pool[retire_tag[i]] <= 1'b1;
+                free_pool[rat_old[retire_reg[i]]] <= 1'b1;
             end
         end
 
         // write newly assigned tag to RAT. store has rd = 0 so this good!!!
         if (rd != 1'b0) begin
+            rat_old[rd] <= rat[rd];
             rat[rd] <= first_free_tag;
             free_pool[first_free_tag] <= 1'b0;
         end

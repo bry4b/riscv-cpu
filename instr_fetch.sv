@@ -4,7 +4,7 @@ If there are no more instructions left, you should have some sort of signal or l
 */
 
 module instr_fetch # (
-    parameter SIZE = 48,
+    parameter SIZE,
     parameter FILE
 ) (
     input clk,
@@ -25,7 +25,7 @@ initial begin
 end
 
 always_ff @(posedge clk) begin
-    mem_data <= {mem[addr], mem[addr+1], mem[addr+2], mem[addr+3]};
+    mem_data <= {mem[addr+3], mem[addr+2], mem[addr+1], mem[addr]};
     if (mem_data == 32'h0) begin
         stop <= 1'b1;
     end else begin

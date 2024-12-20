@@ -14,11 +14,13 @@ module functional_unit #(
     input [NUM_TAGS_LOG2-1:0] tags_in,         // rd tag
     input [ROB_SIZE_LOG2-1:0] rob_index_in,    // rob index
     input valid_in,
+    input loadstore_in,
 
     output logic [REG_SIZE-1:0] rd,             // rd
     output logic [NUM_TAGS_LOG2-1:0] tags_out,  
     output logic [ROB_SIZE_LOG2-1:0] rob_index_out,
-    output logic valid_out
+    output logic valid_out,
+    output logic loadstore_out
     
 );
 
@@ -36,6 +38,9 @@ always_comb begin
             end
             4'b1000: begin // XOR
                 rd = rs1 ^ rs2;
+            end
+            4'b1100: begin // OR
+                rd = rs1 | rs2;
             end
             4'b1110: begin // AND
                 rd = rs1 & rs2;
@@ -61,7 +66,8 @@ end
 
 assign tags_out = tags_in;
 assign rob_index_out = rob_index_in;
-assign valid_out = valid_in;
+assign valid_out = valid_in & ~loadstore_in;
+assign loadstore_out = loadstore_in;
 
 // always @(posedge clk) begin
 //     if (rst) begin

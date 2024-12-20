@@ -6,6 +6,7 @@ module issue_queue_tb (
 );
 
 // `include "constants.sv"
+logic stop;
 
 // instruction fetch
 logic [7:0] program_count;
@@ -61,6 +62,7 @@ logic [31:0] iq_fu_rs2 [0:2];
 logic [5:0] iq_fu_tags [0:2];
 logic [5:0] iq_fu_rob_index [0:2];
 logic iq_fu_valid [0:2];
+logic iq_fu_loadstore [0:2];
 logic iq_stall;
 
 // FU outputs
@@ -68,20 +70,24 @@ logic [31:0] cdb_data [0:2];
 logic [5:0] cdb_tags [0:2];
 logic [5:0] cdb_rob_index [0:2];
 logic cdb_valid [0:2];
+logic cdb_loadstore [0:2];
 
 // LSU load outputs
 logic [5:0] load_rob_index;
+logic [5:0] load_tag;
 logic [31:0] load_data_rd;
 logic load_complete;
 
 instr_fetch #(
-    .SIZE(36),
+    .SIZE(72),
     // .FILE(".\\demo.txt")
-    .FILE("C:\\Users\\bryan\\Documents\\school\\ucla\\UCLA 24F\\eeM116C\\riscv-cpu\\demo.txt")
+    .FILE("C:\\Users\\bryan\\Documents\\school\\ucla\\UCLA 24F\\eeM116C\\riscv-cpu\\final-inst.txt")
 ) IF ( 
     .clk(clk), 
+    
     .addr(program_count), 
-    .mem_data(instruction)
+    .mem_data(instruction),
+    .stop(stop)
 );
 
 decode DE (
@@ -103,6 +109,7 @@ rename RE (
     .stall_in(~decode_valid),
 
     .retire_tag(rob_retire_tag),
+    .retire_reg(rob_retire_reg),
     .retire_valid(rob_retire_valid), 
 
     .opcode(opcode),
@@ -196,6 +203,10 @@ issue_queue IQ (
     .cdb_tags(cdb_tags),
     .cdb_data(cdb_data),
     .cdb_valid(cdb_valid),
+
+    .load_tag(load_tag),
+    .load_data(load_data_rd),
+    .load_valid(load_complete),
     
     // outputs to feed into the FUs
     .fu_op(iq_fu_op),
@@ -204,6 +215,7 @@ issue_queue IQ (
     .fu_tags(iq_fu_tags),
     .fu_rob_index(iq_fu_rob_index),
     .fu_valid(iq_fu_valid),
+    .fu_loadstore(iq_fu_loadstore),
 
     .iq_stall(iq_stall)
 );
@@ -228,10 +240,12 @@ loadstore_queue LSQ (
     .cdb_tags(cdb_tags),
     .cdb_data(cdb_data),
     .cdb_rob_index(cdb_rob_index),
+    .cdb_loadstore(cdb_loadstore),
     .cdb_valid(cdb_valid),
     
     //outputs
     .load_rd(load_data_rd),
+    .load_tag(load_tag),
     .load_rob_index(load_rob_index),
     .load_ready(load_complete)
 );
@@ -249,12 +263,14 @@ generate
             .tags_in(iq_fu_tags[i]),
             .rob_index_in(iq_fu_rob_index[i]),
             .valid_in(iq_fu_valid[i]),
+            .loadstore_in(iq_fu_loadstore[i]),
 
             // outputs
             .rd(cdb_data[i]),
             .tags_out(cdb_tags[i]),
             .rob_index_out(cdb_rob_index[i]),
-            .valid_out(cdb_valid[i])
+            .valid_out(cdb_valid[i]),
+            .loadstore_out(cdb_loadstore[i])
         );
     end
 endgenerate
@@ -267,7 +283,7 @@ initial begin
     program_count = 8'd0;
     // #10 assert (instruction == 32'h00600113);
     // #20 assert (instruction == 32'h00f00193);
-    #200 $stop;
+    #2000 $stop;
 end
 
 always begin
@@ -278,7 +294,9 @@ always @(posedge clk) begin
     if (rst) begin
         program_count <= 8'd0;
     end else begin
-        program_count <= program_count + 3'd4;
+        if (program_count < 7'd72) begin
+            program_count <= program_count + 3'd4;
+        end
     end
 end
 
